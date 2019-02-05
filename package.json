@@ -9,7 +9,7 @@
     "name": "SushiPool Development Team",
     "url": "https://sushipool.com/"
   },
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-or-later",
   "gypfile": true,
   "scripts": {
     "build": "node-gyp build",
