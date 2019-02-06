@@ -38,7 +38,7 @@ function readConfigFile(fileName) {
 
 const config = readConfigFile('./sushipool.conf');
 if (!config) {
-    process.exit(0);
+    process.exit(1);
 }
 
 (async () => {

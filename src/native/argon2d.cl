@@ -1,4 +1,3 @@
-R"===(
 /**
 MIT License
 
@@ -386,4 +385,3 @@ void argon2(
         mem_curr++;
     }
 }
-)==="
