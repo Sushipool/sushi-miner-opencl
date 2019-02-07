@@ -6,13 +6,8 @@
 #include <string.h>
 #include "miner.h"
 
-const char *ARGON2D_CL =
-#include "./argon2d.cl"
-;
-
-const char *BLAKE2B_CL =
-#include "./blake2b.cl"
-;
+#include "./argon2d_cl.h"
+#include "./blake2b_cl.h"
 
 #define VENDOR_AMD "Advanced Micro Devices"
 #define VENDOR_NVIDIA "NVIDIA Corporation"
@@ -74,13 +69,7 @@ cl_int initialize_miner(miner_t *miner,
     return CL_INVALID_PLATFORM;
   }
 
-  const char *sources[2];
-  sources[0] = ARGON2D_CL;
-  sources[1] = BLAKE2B_CL;
-
-  size_t source_lengths[2];
-  source_lengths[0] = strlen(ARGON2D_CL);
-  source_lengths[1] = strlen(BLAKE2B_CL);
+  const char *sources[2] = {(char *)argon2d_cl, (char *)blake2b_cl};
 
   platforms = (cl_platform_id *)malloc(sizeof(cl_platform_id) * num_platforms);
 
@@ -183,7 +172,7 @@ cl_int initialize_miner(miner_t *miner,
       printf("  Device #%u: %s by %s:\n"
              "    Driver %s, OpenCL %s\n"
              "    %u compute units @ %u MHz\n"
-             "    Using %lu GB of global memory, nonces per run: %lu\n",
+             "    Using %lu MB of global memory, nonces per run: %lu\n",
              global_device_idx, worker->device_name, worker->device_vendor,
              worker->driver_version, worker->device_version,
              worker->max_compute_units, worker->max_clock_frequency,
@@ -205,7 +194,7 @@ cl_int initialize_miner(miner_t *miner,
       worker->mem_initial_seed = CL_CHECK_ERR(clCreateBuffer(worker->context, CL_MEM_READ_WRITE, INITIAL_SEED_SIZE, NULL, &_err));
       worker->mem_nonce = CL_CHECK_ERR(clCreateBuffer(worker->context, CL_MEM_READ_WRITE, sizeof(cl_uint), NULL, &_err));
 
-      worker->program = CL_CHECK_ERR(clCreateProgramWithSource(worker->context, 2, sources, source_lengths, &_err));
+      worker->program = CL_CHECK_ERR(clCreateProgramWithSource(worker->context, 2, sources, NULL, &_err));
       cl_int build_result = clBuildProgram(worker->program, 0, NULL, build_options, NULL, NULL);
       if (build_result != CL_SUCCESS)
       {

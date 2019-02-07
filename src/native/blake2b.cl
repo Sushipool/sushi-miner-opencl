@@ -1,4 +1,3 @@
-R"===(
 /*
 * Blake2b
 * based on reference implementation https://github.com/BLAKE2/BLAKE2
@@ -420,4 +419,3 @@ void find_nonce(uint nbits, global struct argon2_block *memory, uint m_cost, glo
     atomic_cmpxchg(nonce_found, 0, nonce);
   }
 }
-)==="

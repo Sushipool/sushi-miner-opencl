@@ -2,6 +2,7 @@
 #define MINER_H_
 
 #include <CL/cl.h>
+#include <stdint.h>
 
 #define INITIAL_SEED_SIZE 256
 #define ARGON2_BLOCK_SIZE 1024
