@@ -172,7 +172,7 @@ cl_int initialize_miner(miner_t *miner,
       printf("  Device #%u: %s by %s:\n"
              "    Driver %s, OpenCL %s\n"
              "    %u compute units @ %u MHz\n"
-             "    Using %lu GB of global memory, nonces per run: %lu\n",
+             "    Using %lu MB of global memory, nonces per run: %lu\n",
              global_device_idx, worker->device_name, worker->device_vendor,
              worker->driver_version, worker->device_version,
              worker->max_compute_units, worker->max_clock_frequency,
