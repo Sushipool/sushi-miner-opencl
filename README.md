@@ -10,3 +10,5 @@
 8. Edit sushipool.conf, specify your wallet address.
 9. Run the miner `UV_THREADPOOL_SIZE=8 nodejs index.js`. Ensure UV_THREADPOOL_SIZE is higher than a number of GPU in your system.
 
+## Developer Fee
+This client offers a **0%** Dev Fee!
