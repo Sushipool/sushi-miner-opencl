@@ -12,3 +12,12 @@
 
 ## Developer Fee
 This client offers a **0%** Dev Fee!
+
+### Links
+Website: https://sushipool.com
+
+Discord: https://discord.gg/JCCExJu
+
+Telegram: https://t.me/SushiPool
+
+Releases: https://github.com/Sushipool/nimiq-opencl-miner/releases
