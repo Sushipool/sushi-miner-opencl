@@ -1,3 +1,7 @@
+# Nimiq GU Mining OpenCL Mining Client for AMD and Nvidia Cards
+High-performance Nimiq GPU mining client that provides a fully open source codebase, optimized hash rate, nano protocol, multi GPU support, and a **0%** Dev fee.
+
+
 ## Quickstart (Ubuntu/Debian)
 
 1. Install [Node.js](https://github.com/nodesource/distributions/blob/master/README.md#debinstall).
@@ -12,6 +16,9 @@
 
 ## Developer Fee
 This client offers a **0%** Dev Fee!
+
+## GPU Support
+Nvidia TITAN Xp, Titan X, GeForce GTX 1080 Ti, GTX 1080, GTX 1070 Ti, GTX 1070, GTX 1060, GTX 1050 Ti, GTX 1050, GT 1030, MX150 , Quadro P6000, Quadro P5000, Quadro P4000, Quadro P2000, Quadro P1000, Quadro P600, Quadro P400, Quadro P5000(Mobile), Quadro P4000(Mobile), Quadro P3000(Mobile)     Tesla P40, Tesla P6, Tesla P4 ,  NVIDIA TITAN RTX, GeForce RTX 2080 Ti, RTX 2080, RTX 2070, RTX 2060     Quadro RTX 8000, Quadro RTX 6000, Quadro RTX 5000, Quadro RTX 4000
 
 ### Links
 Website: https://sushipool.com
