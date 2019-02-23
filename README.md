@@ -1,4 +1,4 @@
-# Nimiq GPU OpenCL Mining Client for AMD and Nvidia Cards
+# Nimiq OpenCL GPU Mining Client for AMD and Nvidia Cards
 High-performance Nimiq GPU mining client that provides a fully open source codebase, optimized hash rate, nano protocol, multi GPU support, and a **0%** Dev fee.
 
 
