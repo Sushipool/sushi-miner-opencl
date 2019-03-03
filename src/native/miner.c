@@ -50,6 +50,7 @@ cl_int initialize_miner(miner_t *miner,
                         uint32_t *allowed_devices, uint32_t allowed_devices_len,
                         uint32_t *memory_sizes, uint32_t memory_sizes_len)
 {
+  cl_int ret;
 #ifdef _WIN32
   cl_int _err;
 #endif
@@ -97,10 +98,10 @@ cl_int initialize_miner(miner_t *miner,
     char *build_options = (is_amd ? "-Werror -DAMD" : "-Werror");
 
     // Find all GPU devices
-    cl_uint num_devices;
+    cl_uint num_devices = 0;
     cl_device_id *devices = NULL;
-    CL_CHECK(clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 0, NULL, &num_devices));
-    if (num_devices < 1)
+    ret = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 0, NULL, &num_devices);
+    if (ret == CL_DEVICE_NOT_FOUND || num_devices < 1)
     {
       printf("  No GPU devices found.\n");
       continue;
