@@ -36,7 +36,7 @@ function readConfigFile(fileName) {
     }
 }
 
-const config = readConfigFile('./sushipool.conf');
+const config = readConfigFile('./miner.conf');
 if (!config) {
     process.exit(1);
 }
