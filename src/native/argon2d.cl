@@ -32,6 +32,8 @@ SOFTWARE.
 #define THREADS_PER_LANE 32
 #define QWORDS_PER_THREAD (ARGON2_QWORDS_IN_BLOCK / 32)
 
+#define MEMORY_COST 512
+
 ulong u64_build(uint hi, uint lo)
 {
     return upsample(hi, lo);
@@ -317,10 +319,10 @@ void argon2_core(
         __global struct block_g *memory, __global struct block_g *mem_curr,
         struct block_th *prev, struct block_th *tmp,
         __local struct u64_shuffle_buf *shuffle_buf,
-        uint thread, uint ref_index)
+        uint thread, uint ref_index, size_t nonces_per_run)
 {
     __global struct block_g *mem_ref;
-    mem_ref = memory + ref_index;
+    mem_ref = memory + ref_index * nonces_per_run;
 
     load_block_xor(prev, mem_ref, thread);
     move_block(tmp, prev);
@@ -332,20 +334,6 @@ void argon2_core(
     store_block(mem_curr, prev, thread);
 }
 
-void argon2_step(
-        __global struct block_g *memory, __global struct block_g *mem_curr,
-        struct block_th *prev, struct block_th *tmp,
-        __local struct u64_shuffle_buf *shuffle_buf,
-        uint thread, uint offset)
-{
-    ulong v = u64_shuffle(prev->a, 0, thread, shuffle_buf);
-    uint ref_index = u64_lo(v);
-
-    compute_ref_pos(offset, &ref_index);
-
-    argon2_core(memory, mem_curr, prev, tmp, shuffle_buf, thread, ref_index);
-}
-
 __kernel
 #ifdef AMD
 __attribute__((reqd_work_group_size(32, 2, 1)))
@@ -354,34 +342,34 @@ __attribute__((reqd_work_group_size(32, 1, 1)))
 #endif
 void argon2(
         __local struct u64_shuffle_buf *shuffle_bufs,
-        __global struct block_g *memory, 
-        uint m_cost)
+        __global struct block_g *memory)
 {
-    uint job_id = get_global_id(1);
+    size_t job_id = get_global_id(1);
     uint warp   = get_local_id(1); // see jobsPerBlock, warp = 0 for now
     uint thread = get_local_id(0);
+    size_t nonces_per_run = get_global_size(1);
 
     __local struct u64_shuffle_buf *shuffle_buf = &shuffle_bufs[warp];
 
     /* select job's memory region: */
-#ifdef AMD
-    memory += (size_t)job_id * (m_cost + 1);
-#else
-    memory += (size_t)job_id * m_cost;
-#endif
+    memory += job_id;
 
     struct block_th prev, tmp;
 
     __global struct block_g *mem_lane = memory; // lane 0
-    __global struct block_g *mem_prev = mem_lane + 1;
-    __global struct block_g *mem_curr = mem_lane + 2;
+    __global struct block_g *mem_prev = mem_lane + nonces_per_run;
+    __global struct block_g *mem_curr = mem_lane + 2 * nonces_per_run;
 
     load_block(&prev, mem_prev, thread);
 
-    for (uint offset = 2; offset < m_cost; offset++) {
+    for (uint offset = 2; offset < MEMORY_COST; offset++) {
 
-        argon2_step(memory, mem_curr, &prev, &tmp, shuffle_buf, thread, offset);
+        ulong v = u64_shuffle(prev.a, 0, thread, shuffle_buf);
+        uint ref_index = u64_lo(v);
+        compute_ref_pos(offset, &ref_index);
 
-        mem_curr++;
+        argon2_core(memory, mem_curr, &prev, &tmp, shuffle_buf, thread, ref_index, nonces_per_run);
+
+        mem_curr += nonces_per_run;
     }
 }

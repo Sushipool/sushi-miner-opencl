@@ -4,8 +4,6 @@
 */
 
 #define ARGON2_HASH_LENGTH 32
-#define ARGON2_BLOCK_SIZE 1024
-#define ARGON2_QWORDS_IN_BLOCK (ARGON2_BLOCK_SIZE / 8)
 
 #define BLAKE2B_HASH_LENGTH 64
 #define BLAKE2B_BLOCK_SIZE 128
@@ -23,23 +21,19 @@
 #define IV6 0x1f83d9abfb41bd6bUL
 #define IV7 0x5be0cd19137e2179UL
 
-struct initial_seed
-{
-  ulong data[32];
-};
-
-struct __attribute__ ((packed)) prehash_seed
-{
-  uint hashlen;
-  ulong initial_hash[8];
-  uint block;
-  uint lane;
-  uint padding[13];
-};
-
-struct argon2_block
-{
-  ulong data[ARGON2_QWORDS_IN_BLOCK];
+constant uint sigma[12][16] = {
+  {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+  {14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3},
+  {11, 8, 12, 0, 5, 2, 15, 13, 10, 14, 3, 6, 7, 1, 9, 4},
+  {7, 9, 3, 1, 13, 12, 11, 14, 2, 6, 5, 10, 4, 0, 15, 8},
+  {9, 0, 5, 7, 2, 4, 10, 15, 14, 1, 11, 12, 6, 8, 3, 13},
+  {2, 12, 6, 10, 0, 11, 8, 3, 4, 13, 7, 5, 15, 14, 1, 9},
+  {12, 5, 1, 15, 14, 13, 4, 10, 0, 7, 6, 3, 9, 2, 8, 11},
+  {13, 11, 7, 14, 12, 1, 3, 9, 5, 0, 15, 4, 8, 6, 2, 10},
+  {6, 15, 14, 9, 11, 3, 0, 8, 12, 2, 13, 7, 1, 4, 10, 5},
+  {10, 2, 8, 4, 7, 6, 1, 5, 15, 11, 9, 14, 3, 12, 13, 0},
+  {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+  {14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3},
 };
 
 void blake2b_init(ulong *h, uint hashlen)
@@ -54,16 +48,28 @@ void blake2b_init(ulong *h, uint hashlen)
   h[7] = IV7;
 }
 
-#define G(a, b, c, d, x, y)          \
+#define G(i, a, b, c, d)                \
+  do {                                  \
+    a = a + b + m[sigma[r][2 * i]];     \
+    d = rotr64(d ^ a, 32);              \
+    c = c + d;                          \
+    b = rotr64(b ^ c, 24);              \
+    a = a + b + m[sigma[r][2 * i + 1]]; \
+    d = rotr64(d ^ a, 16);              \
+    c = c + d;                          \
+    b = rotr64(b ^ c, 63);              \
+  } while(0)
+
+#define ROUND()                      \
   do {                               \
-    v[a] = v[a] + v[b] + m[x];       \
-    v[d] = rotr64(v[d] ^ v[a], 32);  \
-    v[c] = v[c] + v[d];              \
-    v[b] = rotr64(v[b] ^ v[c], 24);  \
-    v[a] = v[a] + v[b] + m[y];       \
-    v[d] = rotr64(v[d] ^ v[a], 16);  \
-    v[c] = v[c] + v[d];              \
-    v[b] = rotr64(v[b] ^ v[c], 63);  \
+    G(0, v[0], v[4], v[8], v[12]);   \
+    G(1, v[1], v[5], v[9], v[13]);   \
+    G(2, v[2], v[6], v[10], v[14]);  \
+    G(3, v[3], v[7], v[11], v[15]);  \
+    G(4, v[0], v[5], v[10], v[15]);  \
+    G(5, v[1], v[6], v[11], v[12]);  \
+    G(6, v[2], v[7], v[8], v[13]);   \
+    G(7, v[3], v[4], v[9], v[14]);   \
   } while(0)
 
 void blake2b_compress(ulong *h, ulong *m, uint bytes_compressed, bool last_block)
@@ -87,114 +93,11 @@ void blake2b_compress(ulong *h, ulong *m, uint bytes_compressed, bool last_block
   v[14] = last_block ? ~IV6 : IV6;
   v[15] = IV7;
 
-  // Round 0
-  G(0, 4, 8, 12, 0, 1);
-  G(1, 5, 9, 13, 2, 3);
-  G(2, 6, 10, 14, 4, 5);
-  G(3, 7, 11, 15, 6, 7);
-  G(0, 5, 10, 15, 8, 9);
-  G(1, 6, 11, 12, 10, 11);
-  G(2, 7, 8, 13, 12, 13);
-  G(3, 4, 9, 14, 14, 15);
-  // Round 1
-  G(0, 4, 8, 12, 14, 10);
-  G(1, 5, 9, 13, 4, 8);
-  G(2, 6, 10, 14, 9, 15);
-  G(3, 7, 11, 15, 13, 6);
-  G(0, 5, 10, 15, 1, 12);
-  G(1, 6, 11, 12, 0, 2);
-  G(2, 7, 8, 13, 11, 7);
-  G(3, 4, 9, 14, 5, 3);
-  // Round 2
-  G(0, 4, 8, 12, 11, 8);
-  G(1, 5, 9, 13, 12, 0);
-  G(2, 6, 10, 14, 5, 2);
-  G(3, 7, 11, 15, 15, 13);
-  G(0, 5, 10, 15, 10, 14);
-  G(1, 6, 11, 12, 3, 6);
-  G(2, 7, 8, 13, 7, 1);
-  G(3, 4, 9, 14, 9, 4); 
-  // Round 3
-  G(0, 4, 8, 12, 7, 9);
-  G(1, 5, 9, 13, 3, 1);
-  G(2, 6, 10, 14, 13, 12);
-  G(3, 7, 11, 15, 11, 14);
-  G(0, 5, 10, 15, 2, 6);
-  G(1, 6, 11, 12, 5, 10);
-  G(2, 7, 8, 13, 4, 0);
-  G(3, 4, 9, 14, 15, 8);
-  // Round 4
-  G(0, 4, 8, 12, 9, 0);
-  G(1, 5, 9, 13, 5, 7);
-  G(2, 6, 10, 14, 2, 4);
-  G(3, 7, 11, 15, 10, 15);
-  G(0, 5, 10, 15, 14, 1);
-  G(1, 6, 11, 12, 11, 12);
-  G(2, 7, 8, 13, 6, 8);
-  G(3, 4, 9, 14, 3, 13); 
-  // Round 5
-  G(0, 4, 8, 12, 2, 12);
-  G(1, 5, 9, 13, 6, 10);
-  G(2, 6, 10, 14, 0, 11);
-  G(3, 7, 11, 15, 8, 3);
-  G(0, 5, 10, 15, 4, 13);
-  G(1, 6, 11, 12, 7, 5);
-  G(2, 7, 8, 13, 15, 14);
-  G(3, 4, 9, 14, 1, 9);
-  // Round 6
-  G(0, 4, 8, 12, 12, 5);
-  G(1, 5, 9, 13, 1, 15);
-  G(2, 6, 10, 14, 14, 13);
-  G(3, 7, 11, 15, 4, 10);
-  G(0, 5, 10, 15, 0, 7);
-  G(1, 6, 11, 12, 6, 3);
-  G(2, 7, 8, 13, 9, 2);
-  G(3, 4, 9, 14, 8, 11);
-  // Round 7
-  G(0, 4, 8, 12, 13, 11);
-  G(1, 5, 9, 13, 7, 14);
-  G(2, 6, 10, 14, 12, 1);
-  G(3, 7, 11, 15, 3, 9);
-  G(0, 5, 10, 15, 5, 0);
-  G(1, 6, 11, 12, 15, 4);
-  G(2, 7, 8, 13, 8, 6);
-  G(3, 4, 9, 14, 2, 10);
-  // Round 8
-  G(0, 4, 8, 12, 6, 15);
-  G(1, 5, 9, 13, 14, 9);
-  G(2, 6, 10, 14, 11, 3);
-  G(3, 7, 11, 15, 0, 8);
-  G(0, 5, 10, 15, 12, 2);
-  G(1, 6, 11, 12, 13, 7);
-  G(2, 7, 8, 13, 1, 4);
-  G(3, 4, 9, 14, 10, 5);
-  // Round 9
-  G(0, 4, 8, 12, 10, 2);
-  G(1, 5, 9, 13, 8, 4);
-  G(2, 6, 10, 14, 7, 6);
-  G(3, 7, 11, 15, 1, 5);
-  G(0, 5, 10, 15, 15, 11);
-  G(1, 6, 11, 12, 9, 14);
-  G(2, 7, 8, 13, 3, 12);
-  G(3, 4, 9, 14, 13, 0);
-  // Round 10
-  G(0, 4, 8, 12, 0, 1);
-  G(1, 5, 9, 13, 2, 3);
-  G(2, 6, 10, 14, 4, 5);
-  G(3, 7, 11, 15, 6, 7);
-  G(0, 5, 10, 15, 8, 9);
-  G(1, 6, 11, 12, 10, 11);
-  G(2, 7, 8, 13, 12, 13);
-  G(3, 4, 9, 14, 14, 15);
-  // Round 11
-  G(0, 4, 8, 12, 14, 10);
-  G(1, 5, 9, 13, 4, 8);
-  G(2, 6, 10, 14, 9, 15);
-  G(3, 7, 11, 15, 13, 6);
-  G(0, 5, 10, 15, 1, 12);
-  G(1, 6, 11, 12, 0, 2);
-  G(2, 7, 8, 13, 11, 7);
-  G(3, 4, 9, 14, 5, 3);
+  #pragma unroll
+  for(int r = 0; r < 12; r++)
+  {
+    ROUND();
+  }
 
   h[0] = h[0] ^ v[0] ^ v[8];
   h[1] = h[1] ^ v[1] ^ v[9];
@@ -206,96 +109,89 @@ void blake2b_compress(ulong *h, ulong *m, uint bytes_compressed, bool last_block
   h[7] = h[7] ^ v[7] ^ v[15];
 }
 
-void set_nonce(struct initial_seed *seed, uint nonce)
+void set_nonce(ulong *inseed, uint nonce)
 {
   // bytes 170-173
   ulong n = ((nonce & 0xFF000000) >> 24)
     | ((nonce & 0x00FF0000) >> 8)
     | ((nonce & 0x0000FF00) << 8)
     | ((nonce & 0x000000FF) << 24);
-  seed->data[21] = (seed->data[21] & 0xFFFF00000000FFFFUL) | (n << 16);
+  inseed[21] = (inseed[21] & 0xFFFF00000000FFFFUL) | (n << 16);
 }
 
-void initial_hash(global struct initial_seed *inseed, uint m_cost, uint nonce, ulong *hash)
+void initial_hash(ulong *hash, global ulong *inseed, uint nonce)
 {
-  struct initial_seed is = *inseed;
-  set_nonce(&is, nonce);
+  ulong is[32];
+#pragma unroll
+  for (uint i = 0; i < 32; i++)
+  {
+    is[i] = inseed[i];
+  }
+  set_nonce(is, nonce);
 
   blake2b_init(hash, BLAKE2B_HASH_LENGTH);
-  blake2b_compress(hash, &is.data[0], BLAKE2B_BLOCK_SIZE, false);
-  blake2b_compress(hash, &is.data[BLAKE2B_QWORDS_IN_BLOCK], ARGON2_INITIAL_SEED_SIZE, true);
+  blake2b_compress(hash, &is[0], BLAKE2B_BLOCK_SIZE, false);
+  blake2b_compress(hash, &is[BLAKE2B_QWORDS_IN_BLOCK], ARGON2_INITIAL_SEED_SIZE, true);
 }
 
-void fill_block(struct prehash_seed *phseed, global struct argon2_block *memory)
+void fill_first_block(global struct block_g *memory, global ulong *inseed, uint nonce, uint block)
 {
-  ulong h[8];
+  ulong hash[8];
+  initial_hash(hash, inseed, nonce);
+
+  uint prehash_seed[32] = {0};
+  prehash_seed[0] = ARGON2_BLOCK_SIZE;
+  #pragma unroll
+  for (uint i = 0; i < 8; i++)
+  {
+    prehash_seed[2 * i + 1] = (uint) hash[i];
+    prehash_seed[2 * i + 2] = (uint) (hash[i] >> 32);
+  }
+  prehash_seed[17] = block;
+
   ulong buffer[BLAKE2B_QWORDS_IN_BLOCK] = {0};
   global ulong *dst = memory->data;
 
   // V1
-  blake2b_init(h, BLAKE2B_HASH_LENGTH);
-  blake2b_compress(h, (ulong*) phseed, ARGON2_PREHASH_SEED_SIZE, true);
+  blake2b_init(hash, BLAKE2B_HASH_LENGTH);
+  blake2b_compress(hash, (ulong*) &prehash_seed, ARGON2_PREHASH_SEED_SIZE, true);
 
-  *(dst++) = h[0];
-  *(dst++) = h[1];
-  *(dst++) = h[2];
-  *(dst++) = h[3];
+  *(dst++) = hash[0];
+  *(dst++) = hash[1];
+  *(dst++) = hash[2];
+  *(dst++) = hash[3];
 
   // V2-Vr
   for (uint r = 2; r < 2 * ARGON2_BLOCK_SIZE / BLAKE2B_HASH_LENGTH; r++)
   {
-    buffer[0] = h[0];
-    buffer[1] = h[1];
-    buffer[2] = h[2];
-    buffer[3] = h[3];
-    buffer[4] = h[4];
-    buffer[5] = h[5];
-    buffer[6] = h[6];
-    buffer[7] = h[7];
+    buffer[0] = hash[0];
+    buffer[1] = hash[1];
+    buffer[2] = hash[2];
+    buffer[3] = hash[3];
+    buffer[4] = hash[4];
+    buffer[5] = hash[5];
+    buffer[6] = hash[6];
+    buffer[7] = hash[7];
 
-    blake2b_init(h, BLAKE2B_HASH_LENGTH);
-    blake2b_compress(h, buffer, BLAKE2B_HASH_LENGTH, true);
+    blake2b_init(hash, BLAKE2B_HASH_LENGTH);
+    blake2b_compress(hash, buffer, BLAKE2B_HASH_LENGTH, true);
 
-    *(dst++) = h[0];
-    *(dst++) = h[1];
-    *(dst++) = h[2];
-    *(dst++) = h[3];
+    *(dst++) = hash[0];
+    *(dst++) = hash[1];
+    *(dst++) = hash[2];
+    *(dst++) = hash[3];
   }
 
-  *(dst++) = h[4];
-  *(dst++) = h[5];
-  *(dst++) = h[6];
-  *(dst++) = h[7];
+  *(dst++) = hash[4];
+  *(dst++) = hash[5];
+  *(dst++) = hash[6];
+  *(dst++) = hash[7];
 }
 
-#ifdef AMD
-void fill_first_blocks(global struct initial_seed *inseed, global struct argon2_block *memory, uint m_cost, uint nonce, uint block)
-#else
-void fill_first_blocks(global struct initial_seed *inseed, global struct argon2_block *memory, uint m_cost, uint nonce)
-#endif
+void compact_to_target(uint share_compact, uchar *target)
 {
-  struct prehash_seed phs = {
-    ARGON2_BLOCK_SIZE
-  };
-
-  initial_hash(inseed, m_cost, nonce, phs.initial_hash);
-
-#ifdef AMD
-  phs.block = block;
-  fill_block(&phs, memory);
-#else
-  phs.block = 0;
-  fill_block(&phs, memory);
-
-  phs.block = 1;
-  fill_block(&phs, memory + 1);
-#endif
-}
-
-void nbits_to_target(uint nbits, uchar *target)
-{
-  uint offset = (31 - (nbits >> 24)); // offset in bytes
-  uint value = nbits & 0xFFFFFF;
+  uint offset = (31 - (share_compact >> 24)); // offset in bytes
+  uint value = share_compact & 0xFFFFFF;
 
   #pragma unroll
   for (uint i = 0; i < ARGON2_HASH_LENGTH; i++)
@@ -318,7 +214,7 @@ bool is_proof_of_work(uchar *hash, uchar *target)
   return true;
 }
 
-void hash_last_block(global struct argon2_block *memory, ulong *hash)
+void hash_last_block(global struct block_g *memory, ulong *hash)
 {
   ulong h[8];
   ulong buffer[BLAKE2B_QWORDS_IN_BLOCK];
@@ -375,43 +271,32 @@ void hash_last_block(global struct argon2_block *memory, ulong *hash)
 
 
 __kernel
-#ifdef AMD
-__attribute__((reqd_work_group_size(32, 2, 1)))
-#else
-__attribute__((reqd_work_group_size(32, 1, 1)))
-#endif
-void init_memory(global struct initial_seed *inseed, global struct argon2_block *memory, uint m_cost)
+__attribute__((reqd_work_group_size(128, 2, 1)))
+void init_memory(global struct block_g *memory, global ulong *inseed, uint start_nonce)
 {
-  uint nonce = get_global_id(0);
-  uint start_nonce = get_global_offset(0);
+  size_t job_id = get_global_id(0);
+  uint nonce = start_nonce + job_id;
+  size_t nonces_per_run = get_global_size(0);
 
-#ifdef AMD
   uint block = get_local_id(1);
-  memory += (size_t) (nonce - start_nonce) * (m_cost + 1) + block;
-  fill_first_blocks(inseed, memory, m_cost, nonce, block);
-#else
-  memory += (size_t) (nonce - start_nonce) * m_cost;
-  fill_first_blocks(inseed, memory, m_cost, nonce);
-#endif
+  memory += job_id + block * nonces_per_run;
+  fill_first_block(memory, inseed, nonce, block);
 }
 
 __kernel
-__attribute__((reqd_work_group_size(32, 1, 1)))
-void find_nonce(uint nbits, global struct argon2_block *memory, uint m_cost, global uint *nonce_found)
+__attribute__((reqd_work_group_size(256, 1, 1)))
+void get_nonce(global struct block_g *memory, uint start_nonce, uint share_compact, global uint *nonce_found)
 {
-  uint nonce = get_global_id(0);
-  uint start_nonce = get_global_offset(0);
+  size_t job_id = get_global_id(0);
+  uint nonce = start_nonce + job_id;
+  size_t nonces_per_run = get_global_size(0);
 
   uchar hash[ARGON2_HASH_LENGTH];
   uchar target[ARGON2_HASH_LENGTH];
 
-#ifdef AMD
-  memory += (size_t) (nonce - start_nonce + 1) * (m_cost + 1) - 2;
-#else
-  memory += (size_t) (nonce - start_nonce + 1) * m_cost - 1;
-#endif
+  memory += job_id + nonces_per_run * (MEMORY_COST - 1);
 
-  nbits_to_target(nbits, target);
+  compact_to_target(share_compact, target);
   hash_last_block(memory, (ulong*) hash);
 
   if (is_proof_of_work(hash, target))

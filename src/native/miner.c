@@ -14,7 +14,6 @@
 
 #define ONE_GB 0x40000000L
 #define ONE_MB 0x100000L
-#define NONCES_PER_GROUP 32
 #define THREADS_PER_LANE 32
 
 #define CL_CHECK(_expr)                                                        \
@@ -151,12 +150,11 @@ cl_int initialize_miner(miner_t *miner,
       }
       if (memory_size_mb == 0)
       {
-        const cl_ulong memory_size_gb = (is_amd ? worker->max_mem_alloc_size : worker->global_mem_size / 2) / ONE_GB;
+        const cl_ulong memory_size_gb = (is_amd ? worker->max_mem_alloc_size / ONE_GB : worker->global_mem_size / ONE_GB - 1);
         memory_size_mb = memory_size_gb * 1024;
       }
 
       const cl_ulong nonces_per_run = (memory_size_mb * ONE_MB) / (ARGON2_BLOCK_SIZE * ARGON2_MEMORY_COST);
-      const cl_uint memory_cost = ARGON2_MEMORY_COST;
       const cl_uint jobs_per_block = (is_amd ? 2 : 1);
       const size_t shmem_size = THREADS_PER_LANE * 2 * sizeof(cl_uint) * jobs_per_block;
 
@@ -184,7 +182,7 @@ cl_int initialize_miner(miner_t *miner,
       worker->context = CL_CHECK_ERR(clCreateContext(NULL, 1, &worker->device_id, NULL, NULL, &_err));
 
       cl_int mem_err;
-      size_t blocks_mem_size = (size_t)(ARGON2_MEMORY_COST + (is_amd ? 1 : 0)) * ARGON2_BLOCK_SIZE * nonces_per_run;
+      size_t blocks_mem_size = (size_t)nonces_per_run * ARGON2_MEMORY_COST * ARGON2_BLOCK_SIZE;
       worker->mem_argon2_blocks = clCreateBuffer(worker->context, CL_MEM_READ_WRITE, blocks_mem_size, NULL, &mem_err);
       if (mem_err != CL_SUCCESS)
       {
@@ -212,25 +210,21 @@ cl_int initialize_miner(miner_t *miner,
       worker->queue = CL_CHECK_ERR(clCreateCommandQueue(worker->context, worker->device_id, 0, &_err));
 
       worker->kernel_init_memory = CL_CHECK_ERR(clCreateKernel(worker->program, "init_memory", &_err));
-      CL_CHECK(clSetKernelArg(worker->kernel_init_memory, 0, sizeof(cl_mem), &worker->mem_initial_seed));
-      CL_CHECK(clSetKernelArg(worker->kernel_init_memory, 1, sizeof(cl_mem), &worker->mem_argon2_blocks));
-      CL_CHECK(clSetKernelArg(worker->kernel_init_memory, 2, sizeof(cl_uint), &memory_cost));
+      CL_CHECK(clSetKernelArg(worker->kernel_init_memory, 0, sizeof(cl_mem), &worker->mem_argon2_blocks));
+      CL_CHECK(clSetKernelArg(worker->kernel_init_memory, 1, sizeof(cl_mem), &worker->mem_initial_seed));
 
       worker->kernel_argon2 = CL_CHECK_ERR(clCreateKernel(worker->program, "argon2", &_err));
       CL_CHECK(clSetKernelArg(worker->kernel_argon2, 0, shmem_size, NULL));
       CL_CHECK(clSetKernelArg(worker->kernel_argon2, 1, sizeof(cl_mem), &worker->mem_argon2_blocks));
-      CL_CHECK(clSetKernelArg(worker->kernel_argon2, 2, sizeof(cl_uint), &memory_cost));
 
-      worker->kernel_find_nonce = CL_CHECK_ERR(clCreateKernel(worker->program, "find_nonce", &_err));
-      // arg 0 is not available yet
-      CL_CHECK(clSetKernelArg(worker->kernel_find_nonce, 1, sizeof(cl_mem), &worker->mem_argon2_blocks));
-      CL_CHECK(clSetKernelArg(worker->kernel_find_nonce, 2, sizeof(cl_uint), &memory_cost));
+      worker->kernel_find_nonce = CL_CHECK_ERR(clCreateKernel(worker->program, "get_nonce", &_err));
+      CL_CHECK(clSetKernelArg(worker->kernel_find_nonce, 0, sizeof(cl_mem), &worker->mem_argon2_blocks));
       CL_CHECK(clSetKernelArg(worker->kernel_find_nonce, 3, sizeof(cl_mem), &worker->mem_nonce));
 
       worker->init_memory_global_size[0] = nonces_per_run;
-      worker->init_memory_global_size[1] = jobs_per_block;
-      worker->init_memory_local_size[0] = NONCES_PER_GROUP;
-      worker->init_memory_local_size[1] = jobs_per_block;
+      worker->init_memory_global_size[1] = 2;
+      worker->init_memory_local_size[0] = 128;
+      worker->init_memory_local_size[1] = 2;
 
       worker->argon2_global_size[0] = THREADS_PER_LANE;
       worker->argon2_global_size[1] = nonces_per_run;
@@ -238,7 +232,7 @@ cl_int initialize_miner(miner_t *miner,
       worker->argon2_local_size[1] = jobs_per_block;
 
       worker->find_nonce_global_size[0] = nonces_per_run;
-      worker->find_nonce_local_size[0] = NONCES_PER_GROUP;
+      worker->find_nonce_local_size[0] = 256;
 
       worker_idx++;
     }
@@ -287,16 +281,16 @@ cl_int setup_worker(worker_t *worker, void *initial_seed)
 cl_int mine_nonces(worker_t *worker, cl_uint start_nonce, cl_uint share_compact, cl_uint *nonce)
 {
   // Initialize memory
-  size_t init_memory_global_offset[2] = {start_nonce, 0};
-  CL_CHECK(clEnqueueNDRangeKernel(worker->queue, worker->kernel_init_memory, 2, init_memory_global_offset, worker->init_memory_global_size, worker->init_memory_local_size, 0, NULL, NULL));
+  CL_CHECK(clSetKernelArg(worker->kernel_init_memory, 2, sizeof(cl_uint), &start_nonce));
+  CL_CHECK(clEnqueueNDRangeKernel(worker->queue, worker->kernel_init_memory, 2, NULL, worker->init_memory_global_size, worker->init_memory_local_size, 0, NULL, NULL));
 
   // Compute Argon2d hashes
   CL_CHECK(clEnqueueNDRangeKernel(worker->queue, worker->kernel_argon2, 2, NULL, worker->argon2_global_size, worker->argon2_local_size, 0, NULL, NULL));
 
   // Is there PoW?
-  size_t find_nonce_global_offset[1] = {start_nonce};
-  CL_CHECK(clSetKernelArg(worker->kernel_find_nonce, 0, sizeof(cl_uint), &share_compact));
-  CL_CHECK(clEnqueueNDRangeKernel(worker->queue, worker->kernel_find_nonce, 1, find_nonce_global_offset, worker->find_nonce_global_size, worker->find_nonce_local_size, 0, NULL, NULL));
+  CL_CHECK(clSetKernelArg(worker->kernel_find_nonce, 1, sizeof(cl_uint), &start_nonce));
+  CL_CHECK(clSetKernelArg(worker->kernel_find_nonce, 2, sizeof(cl_uint), &share_compact));
+  CL_CHECK(clEnqueueNDRangeKernel(worker->queue, worker->kernel_find_nonce, 1, NULL, worker->find_nonce_global_size, worker->find_nonce_local_size, 0, NULL, NULL));
 
   CL_CHECK(clEnqueueReadBuffer(worker->queue, worker->mem_nonce, CL_TRUE, 0, sizeof(cl_uint), nonce, 0, NULL, NULL));
 
