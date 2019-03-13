@@ -40,6 +40,7 @@ cp node_modules/@nimiq/core/build/Release/*.node dist/
 cp dist/nimiq_node_compat.node dist/nimiq_node_sse2.node
 rm dist/nimiq_node_native.node
 cp miner.sample.conf dist
+cp start_gpu.bat dist
 
 echo "Create zipped"
 cd dist/
