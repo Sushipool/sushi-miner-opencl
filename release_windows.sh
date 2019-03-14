@@ -34,6 +34,7 @@ mkdir dist
 pkg -t node10-windows index.js
 mv index.exe dist/sushipool-gpu-miner.exe
 
+cp build/Release/nimiq_miner.node dist/
 cp node_modules/leveldown/build/Release/leveldown.node dist/
 cp node_modules/cpuid-git/build/Release/cpuid.node dist/
 cp node_modules/@nimiq/core/build/Release/*.node dist/
