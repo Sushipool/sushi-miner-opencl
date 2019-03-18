@@ -1,7 +1,7 @@
 # Nimiq OpenCL GPU Mining Client for AMD and Nvidia Cards
+[![Github All Releases](https://img.shields.io/github/downloads/Sushipool/nimiq-opencl-miner/total.svg)]()
+
 High-performance Nimiq GPU mining client that provides a fully open source codebase, optimized hash rate, nano protocol, multi GPU support, and a **0%** Dev fee.
-
-
 ## Quickstart (Ubuntu/Debian)
 
 1. Install [Node.js](https://github.com/nodesource/distributions/blob/master/README.md#debinstall).
@@ -14,6 +14,11 @@ High-performance Nimiq GPU mining client that provides a fully open source codeb
 8. Edit sushipool.conf, specify your wallet address.
 9. Run the miner `UV_THREADPOOL_SIZE=8 nodejs index.js`. Ensure UV_THREADPOOL_SIZE is higher than a number of GPU in your system.
 
+## HiveOS Mining FlightSheet
+Use the following FlightSheet settings to start mining Nimiq with HiveOS.
+![HiveOS](https://github.com/Sushipool/nimiq-opencl-miner/blob/master/hiveos-flightsheet.png?raw=true)
+
+
 ## Developer Fee
 This client offers a **0%** Dev Fee!
 
@@ -24,6 +29,13 @@ Nvidia TITAN Xp, Titan X, GeForce GTX 1080 Ti, GTX 1080, GTX 1070 Ti, GTX 1070, 
 Nvidia: Please update to the latest Nvidia Cuda 10 drivers.
 
 AMD: Version 18.10 is recommended to avoid any issues.
+
+## Mining Parameters
+"hashrate": 90,
+
+"devices": [0,1,2],
+
+"memory": [1024,2048,3072]
 
 ### Links
 Website: https://sushipool.com
