@@ -156,7 +156,7 @@ cl_int initialize_miner(miner_t *miner,
 
       const cl_ulong nonces_per_run = (memory_size_mb * ONE_MB) / (ARGON2_BLOCK_SIZE * ARGON2_MEMORY_COST);
       const cl_uint jobs_per_block = (is_amd ? 2 : 1);
-      const size_t shmem_size = THREADS_PER_LANE * 2 * sizeof(cl_uint) * jobs_per_block;
+      const size_t shmem_size = jobs_per_block * ARGON2_BLOCK_SIZE;
 
       if (strlen(worker->driver_version) == 0)
       {
