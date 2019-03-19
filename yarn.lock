@@ -2,10 +2,10 @@
 # yarn lockfile v1
 
 
-"@nimiq/core@^1.4.1":
-  version "1.4.1"
-  resolved "https://registry.yarnpkg.com/@nimiq/core/-/core-1.4.1.tgz#8558dd0dc8d34ffd866ea0a35f1fcb2ec4dc5d24"
-  integrity sha512-F/0Ermkr8oCpvxhvXzrQTbKUc/fMy+d1ah1umnj2lhB69dKFvw2Fc8/FW6TxWxRrOWnZ3Rv78HpYF6ExjjxjbQ==
+"@nimiq/core@^1.4.3":
+  version "1.4.3"
+  resolved "https://registry.yarnpkg.com/@nimiq/core/-/core-1.4.3.tgz#aac9256fddcac5fe7fd622ec871d2982602ce946"
+  integrity sha512-Pn9zCgGKpeON6HoM8QA3ngo5FSqVhFhDOiuTFPFWTU99NvVO+CWX5VNj3dTUirUgNsjbzuS3+W35c48BZoBwfw==
   dependencies:
     "@nimiq/jungle-db" "^0.9.17"
     atob "^2.0.3"
