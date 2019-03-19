@@ -12,7 +12,7 @@ PACKAGE_VERSION=$(cat package.json \
   | awk -F: '{ print $2 }' \
   | sed 's/[",]//g')
 PACKAGE_VERSION_NO_WHITESPACE="$(echo -e "${PACKAGE_VERSION}" | tr -d '[:space:]')"
-OUTFILE="sushipool-gpu-miner-linux-${PACKAGE_VERSION_NO_WHITESPACE}.tar.gz"
+OUTFILE="sushipool-opencl-miner-linux-${PACKAGE_VERSION_NO_WHITESPACE}.tar.gz"
 echo "Building ${OUTFILE}"
 export PACKAGING="1" # set to 1 so nimiq builds the optimised node files for all cpus
 
@@ -24,7 +24,7 @@ pkg -t node10-linux index.js
 mv index dist/sushipool-opencl-miner
 
 cp build/Release/nimiq_miner.node dist/
-cp node_modules/leveldown/build/Release/leveldown.node dist/
+cp node_modules/node-lmdb/build/Release/node-lmdb.node dist/
 cp node_modules/cpuid-git/build/Release/cpuid.node dist/
 cp node_modules/@nimiq/core/build/Release/*.node dist/
 cp dist/nimiq_node_compat.node dist/nimiq_node_sse2.node

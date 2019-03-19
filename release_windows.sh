@@ -32,7 +32,7 @@ PACKAGE_VERSION=$(cat package.json \
   | awk -F: '{ print $2 }' \
   | sed 's/[",]//g')
 PACKAGE_VERSION_NO_WHITESPACE="$(echo -e "${PACKAGE_VERSION}" | tr -d '[:space:]')"
-OUTFILE="sushipool-gpu-miner-windows-${PACKAGE_VERSION_NO_WHITESPACE}.zip"
+OUTFILE="sushipool-opencl-miner-windows-${PACKAGE_VERSION_NO_WHITESPACE}.zip"
 echo "Building ${OUTFILE}"
 
 rm -rf node_modules
