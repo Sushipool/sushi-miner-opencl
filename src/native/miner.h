@@ -20,6 +20,7 @@ typedef struct
   cl_ulong global_mem_size;
   cl_uint nonces_per_run;
   cl_uint device_index;
+  cl_uint thread_index;
   cl_device_id device_id;
   cl_context context;
   cl_command_queue queue;
@@ -45,8 +46,9 @@ typedef struct
 } miner_t;
 
 cl_int initialize_miner(miner_t *miner,
-                        uint32_t *allowed_devices, uint32_t allowed_devices_len,
-                        uint32_t *memory_sizes, uint32_t memory_sizes_len);
+                        uint32_t *enabled_devices, uint32_t enabled_devices_len,
+                        uint32_t *memory_sizes, uint32_t memory_sizes_len,
+                        uint32_t *threads, uint32_t threads_len);
 cl_int release_miner(miner_t *miner);
 cl_int setup_worker(worker_t *worker, void *initial_seed);
 cl_int mine_nonces(worker_t *worker, cl_uint start_nonce, cl_uint share_compact, cl_uint *nonce);

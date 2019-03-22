@@ -6,6 +6,8 @@ const MAX_NONCE = 2 ** 32;
 const HASHRATE_MOVING_AVERAGE = 5; // seconds
 const HASHRATE_REPORT_INTERVAL = 5; // seconds
 
+const SHARE_WATCHDOG_INTERVAL = 180; // seconds
+
 const ARGON2_ITERATIONS = 1;
 const ARGON2_LANES = 1;
 const ARGON2_MEMORY_COST = 512;
@@ -16,7 +18,7 @@ const ARGON2_HASH_LENGTH = 32;
 
 class NanoPoolMiner extends Nimiq.NanoPoolMiner {
 
-    constructor(blockchain, time, address, deviceId, deviceData, allowedDevices, memorySizes) {
+    constructor(blockchain, time, address, deviceId, deviceData, allowedDevices, memorySizes, threads) {
         super(blockchain, time, address, deviceId, deviceData);
 
         this._miningEnabled = false;
@@ -25,16 +27,19 @@ class NanoPoolMiner extends Nimiq.NanoPoolMiner {
 
         allowedDevices = Array.isArray(allowedDevices) ? allowedDevices : [];
         memorySizes = Array.isArray(memorySizes) ? memorySizes : [];
+        threads = Array.isArray(threads) ? threads : [];
 
-        const miner = new NativeMiner.Miner(allowedDevices, memorySizes);
+        const miner = new NativeMiner.Miner(allowedDevices, memorySizes, threads);
         const workers = miner.getWorkers();
 
-        this._hashes = new Array(workers.length).fill(0);
-        this._lastHashRates = this._hashes.map(_ => []);
+        this._hashes = [];
+        this._lastHashRates = [];
+        this._sharesFound = 0;
 
         this._miner = miner; // Keep GC away
-        this._workers = workers.map((w, idx) => {
+        this._workers = workers.map(w => {
             const noncesPerRun = w.noncesPerRun;
+            const idx = w.deviceIndex;
 
             return (block) => {
                 const workId = this._workId;
@@ -45,7 +50,7 @@ class NanoPoolMiner extends Nimiq.NanoPoolMiner {
                         if (error) {
                             throw error;
                         }
-                        this._hashes[idx] += noncesPerRun;
+                        this._hashes[idx] = (this._hashes[idx] || 0) + noncesPerRun;
                         // Another block arrived
                         if (workId !== this._workId) {
                             return;
@@ -61,17 +66,6 @@ class NanoPoolMiner extends Nimiq.NanoPoolMiner {
 
                 w.setup(this._getInitialSeed(block.header.serialize()));
                 next();
-            };
-        });
-        this._gpuInfo = workers.map(w => {
-            return {
-                idx: w.deviceIndex,
-                name: w.deviceName,
-                vendor: w.deviceVendor,
-                driver: w.driverVersion,
-                computeUnits: w.maxComputeUnits,
-                clockFrequency: w.maxClockFrequency,
-                memSize: w.globalMemSize
             };
         });
     }
@@ -92,15 +86,17 @@ class NanoPoolMiner extends Nimiq.NanoPoolMiner {
     }
 
     _reportHashRates() {
-        this._lastHashRates.forEach((hashRates, idx) => {
-            const hashRate = this._hashes[idx] / HASHRATE_REPORT_INTERVAL;
-            hashRates.push(hashRate);
-            if (hashRates.length > HASHRATE_MOVING_AVERAGE) {
-                hashRates.shift();
+        const averageHashRates = [];
+        this._hashes.forEach((hashes, idx) => {
+            const hashRate = hashes / HASHRATE_REPORT_INTERVAL;
+            this._lastHashRates[idx] = this._lastHashRates[idx] || [];
+            this._lastHashRates[idx].push(hashRate);
+            if (this._lastHashRates[idx].length > HASHRATE_MOVING_AVERAGE) {
+                this._lastHashRates[idx].shift();
             }
+            averageHashRates[idx] = this._lastHashRates[idx].reduce((sum, val) => sum + val, 0) / this._lastHashRates[idx].length;
         });
-        this._hashes.fill(0);
-        const averageHashRates = this._lastHashRates.map(hashRates => hashRates.reduce((sum, val) => sum + val, 0) / hashRates.length);
+        this._hashes = [];
         this.fire('hashrates-changed', averageHashRates);
     }
 
@@ -110,6 +106,9 @@ class NanoPoolMiner extends Nimiq.NanoPoolMiner {
         this._miningEnabled = true;
         if (!this._hashRateTimer) {
             this._hashRateTimer = setInterval(() => this._reportHashRates(), 1000 * HASHRATE_REPORT_INTERVAL);
+        }
+        if (!this._shareWatchDog) {
+            this._shareWatchDog = setInterval(() => this._checkIfSharesFound(), 1000 * SHARE_WATCHDOG_INTERVAL);
         }
 
         const block = this.getNextBlock();
@@ -123,8 +122,24 @@ class NanoPoolMiner extends Nimiq.NanoPoolMiner {
     _stopMining() {
         this._miningEnabled = false;
         if (this._hashRateTimer) {
+            this._hashes = [];
+            this._lastHashRates = [];
             clearInterval(this._hashRateTimer);
             delete this._hashRateTimer;
+        }
+        if (this._shareWatchDog) {
+            clearInterval(this._shareWatchDog);
+            delete this._shareWatchDog;
+        }
+    }
+
+    _onNewPoolSettings(address, extraData, shareCompact, nonce) {
+        super._onNewPoolSettings(address, extraData, shareCompact, nonce);
+        if (Nimiq.BlockUtils.isValidCompact(shareCompact)) {
+            const difficulty = Nimiq.BlockUtils.compactToDifficulty(shareCompact);
+            Nimiq.Log.i(NanoPoolMiner, `Set share difficulty: ${difficulty.toFixed(2)} (${shareCompact.toString(16)})`);
+        } else {
+            Nimiq.Log.w(NanoPoolMiner, `Pool sent invalid target: ${shareCompact}`);
         }
     }
 
@@ -145,13 +160,24 @@ class NanoPoolMiner extends Nimiq.NanoPoolMiner {
         });
     }
 
+    _onBlockMined(block) {
+        super._onBlockMined(block);
+        this._sharesFound++;
+    }
+
+    _checkIfSharesFound() {
+        Nimiq.Log.d(NanoPoolMiner, `Shares found since the last check: ${this._sharesFound}`);
+        if (this._sharesFound > 0) {
+            this._sharesFound = 0;
+            return;
+        }
+        Nimiq.Log.w(NanoPoolMiner, `No shares have been found for the last ${SHARE_WATCHDOG_INTERVAL} seconds. Reconnecting.`);
+        this._timeoutReconnect();
+    }
+
     _turnPoolOff() {
         super._turnPoolOff();
         this._stopMining();
-    }
-
-    get gpuInfo() {
-        return this._gpuInfo;
     }
 }
 

@@ -34,6 +34,6 @@ cp start_gpu.sh dist
 
 echo "Create tar.gz"
 cd dist/
-tar cvzf ../${OUTFILE} .
+tar cvzf ../${OUTFILE} *
 cd ..
 mv ${OUTFILE} dist/

@@ -63,17 +63,17 @@ if (!config) {
     Log.i(TAG, `- pool server      = ${config.host}:${config.port}`);
     Log.i(TAG, `- address          = ${address.toUserFriendlyAddress()}`);
     Log.i(TAG, `- device name      = ${deviceName}`);
+    Log.i(TAG, `- device id        = ${deviceId}`);
 
     $.miner = new NanoPoolMiner($.blockchain, $.network.time, address, deviceId, deviceData,
-        config.devices, config.memory);
+        config.devices, config.memory, config.threads);
 
     $.miner.on('share', (block, blockValid) => {
         Log.i(TAG, `Found share. Nonce: ${block.header.nonce}`);
     });
     $.miner.on('hashrates-changed', hashrates => {
-        const totalHashRate = hashrates.reduce((a, b) => a + b);
-        const gpuInfo = $.miner.gpuInfo;
-        Log.i(TAG, `Hashrate: ${humanHashrate(totalHashRate)} | ${hashrates.map((hr, idx) => `GPU${gpuInfo[idx].idx}: ${humanHashrate(hr)}`).join(' | ')}`);
+        const totalHashRate = hashrates.reduce((a, b) => a + b, 0);
+        Log.i(TAG, `Hashrate: ${humanHashrate(totalHashRate)} | ${hashrates.map((hr, idx) => `GPU${idx}: ${humanHashrate(hr)}`).filter(hr => hr).join(' | ')}`);
     });
 
     $.consensus.on('established', () => {

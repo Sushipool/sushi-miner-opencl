@@ -46,8 +46,9 @@
 const cl_uint zero = 0;
 
 cl_int initialize_miner(miner_t *miner,
-                        uint32_t *allowed_devices, uint32_t allowed_devices_len,
-                        uint32_t *memory_sizes, uint32_t memory_sizes_len)
+                        uint32_t *enabled_devices, uint32_t enabled_devices_len,
+                        uint32_t *memory_sizes, uint32_t memory_sizes_len,
+                        uint32_t *threads, uint32_t threads_len)
 {
   cl_int ret;
 #ifdef _WIN32
@@ -57,7 +58,7 @@ cl_int initialize_miner(miner_t *miner,
   miner->workers = NULL;
 
   cl_uint global_device_idx = 0;
-  cl_uint worker_idx = 0;
+  cl_uint enabled_device_idx = 0;
 
   // Find all OpenCL platforms
   cl_uint num_platforms;
@@ -110,30 +111,44 @@ cl_int initialize_miner(miner_t *miner,
     CL_CHECK(clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, num_devices, devices, NULL));
 
     // Iterate over devices, setup workers
-    for (cl_uint device_idx = 0; device_idx < num_devices; device_idx++, global_device_idx++)
+    for (cl_uint platform_device_idx = 0; platform_device_idx < num_devices; platform_device_idx++, global_device_idx++)
     {
-      // Check if this device is allowed
-      cl_bool allowed = (allowed_devices_len == 0) || (worker_idx < allowed_devices_len && allowed_devices[worker_idx] == global_device_idx);
-      if (!allowed)
+      cl_device_id device_id = devices[platform_device_idx];
+      char device_name[255];
+      char device_vendor[255];
+      char driver_version[64];
+      char device_version[64];
+      cl_uint max_compute_units;
+      cl_uint max_clock_frequency;
+      cl_ulong max_mem_alloc_size;
+      cl_ulong global_mem_size;
+
+      CL_CHECK(clGetDeviceInfo(device_id, CL_DEVICE_NAME, sizeof(device_name), &device_name, NULL));
+      CL_CHECK(clGetDeviceInfo(device_id, CL_DEVICE_VENDOR, sizeof(device_vendor), &device_vendor, NULL));
+      CL_CHECK(clGetDeviceInfo(device_id, CL_DRIVER_VERSION, sizeof(driver_version), &driver_version, NULL));
+      CL_CHECK(clGetDeviceInfo(device_id, CL_DEVICE_VERSION, sizeof(device_version), &device_version, NULL));
+      CL_CHECK(clGetDeviceInfo(device_id, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(max_compute_units), &max_compute_units, NULL));
+      CL_CHECK(clGetDeviceInfo(device_id, CL_DEVICE_MAX_CLOCK_FREQUENCY, sizeof(max_clock_frequency), &max_clock_frequency, NULL));
+      CL_CHECK(clGetDeviceInfo(device_id, CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(max_mem_alloc_size), &max_mem_alloc_size, NULL));
+      CL_CHECK(clGetDeviceInfo(device_id, CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(global_mem_size), &global_mem_size, NULL));
+
+      if (strlen(driver_version) == 0)
       {
-        printf("  Device #%u:\n    Disabled by user\n", global_device_idx);
-        continue;
+        strcpy(driver_version, "?");
       }
 
-      miner->num_workers++;
-      miner->workers = (worker_t *)realloc(miner->workers, sizeof(worker_t) * miner->num_workers);
-      worker_t *worker = &miner->workers[worker_idx];
-      worker->device_index = global_device_idx;
-      worker->device_id = devices[device_idx];
+      if (strlen(device_version) == 0)
+      {
+        strcpy(device_version, "?");
+      }
 
-      CL_CHECK(clGetDeviceInfo(worker->device_id, CL_DEVICE_NAME, sizeof(worker->device_name), &worker->device_name, NULL));
-      CL_CHECK(clGetDeviceInfo(worker->device_id, CL_DEVICE_VENDOR, sizeof(worker->device_vendor), &worker->device_vendor, NULL));
-      CL_CHECK(clGetDeviceInfo(worker->device_id, CL_DRIVER_VERSION, sizeof(worker->driver_version), &worker->driver_version, NULL));
-      CL_CHECK(clGetDeviceInfo(worker->device_id, CL_DEVICE_VERSION, sizeof(worker->device_version), &worker->device_version, NULL));
-      CL_CHECK(clGetDeviceInfo(worker->device_id, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(worker->max_compute_units), &worker->max_compute_units, NULL));
-      CL_CHECK(clGetDeviceInfo(worker->device_id, CL_DEVICE_MAX_CLOCK_FREQUENCY, sizeof(worker->max_clock_frequency), &worker->max_clock_frequency, NULL));
-      CL_CHECK(clGetDeviceInfo(worker->device_id, CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(worker->max_mem_alloc_size), &worker->max_mem_alloc_size, NULL));
-      CL_CHECK(clGetDeviceInfo(worker->device_id, CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(worker->global_mem_size), &worker->global_mem_size, NULL));
+      // Check if this device is enabled
+      cl_bool enabled = (enabled_devices_len == 0) || (enabled_device_idx < enabled_devices_len && enabled_devices[enabled_device_idx] == global_device_idx);
+      if (!enabled)
+      {
+        printf("  Device #%u: %s by %s:\n    Disabled by user\n", global_device_idx, device_name, device_vendor);
+        continue;
+      }
 
       // Calculate memory allocation
       cl_ulong memory_size_mb = 0;
@@ -143,98 +158,133 @@ cl_int initialize_miner(miner_t *miner,
         {
           memory_size_mb = memory_sizes[0];
         }
-        else if (worker_idx < memory_sizes_len)
+        else if (enabled_device_idx < memory_sizes_len)
         {
-          memory_size_mb = memory_sizes[worker_idx];
+          memory_size_mb = memory_sizes[enabled_device_idx];
         }
       }
       if (memory_size_mb == 0)
       {
-        const cl_ulong memory_size_gb = (is_amd ? worker->max_mem_alloc_size / ONE_GB : worker->global_mem_size / ONE_GB - 1);
+        const cl_ulong memory_size_gb = (is_amd ? max_mem_alloc_size / ONE_GB : global_mem_size / ONE_GB - 1);
         memory_size_mb = memory_size_gb * 1024;
       }
+
+      // How many threads to run
+      cl_uint num_threads = 1;
+      if (threads_len > 0)
+      {
+        if (threads_len == 1)
+        {
+          num_threads = threads[0];
+        }
+        else if (enabled_device_idx < threads_len)
+        {
+          num_threads = threads[enabled_device_idx];
+        }
+      }
+      num_threads = (num_threads > 8) ? 8 : (num_threads < 1) ? 1 : num_threads; // limit to some reasonable value
 
       const cl_ulong nonces_per_run = (memory_size_mb * ONE_MB) / (ARGON2_BLOCK_SIZE * ARGON2_MEMORY_COST);
       const cl_uint jobs_per_block = (is_amd ? 2 : 1);
       const size_t shmem_size = jobs_per_block * ARGON2_BLOCK_SIZE;
 
-      if (strlen(worker->driver_version) == 0)
-      {
-        strcpy(worker->driver_version, "?");
-      }
-
-      if (strlen(worker->device_version) == 0)
-      {
-        strcpy(worker->device_version, "?");
-      }
-
       printf("  Device #%u: %s by %s:\n"
              "    Driver %s, OpenCL %s\n"
              "    %u compute units @ %u MHz\n"
-             "    Using %lu MB of global memory, nonces per run: %lu\n",
-             global_device_idx, worker->device_name, worker->device_vendor,
-             worker->driver_version, worker->device_version,
-             worker->max_compute_units, worker->max_clock_frequency,
-             memory_size_mb, nonces_per_run);
+             "    Using %lu MB of global memory, nonces per run: %lu x %u thread(s)\n",
+             global_device_idx, device_name, device_vendor,
+             driver_version, device_version,
+             max_compute_units, max_clock_frequency,
+             num_threads * memory_size_mb, nonces_per_run, num_threads);
 
-      worker->nonces_per_run = (cl_uint)nonces_per_run;
+      cl_context context = CL_CHECK_ERR(clCreateContext(NULL, 1, &device_id, NULL, NULL, &_err));
 
-      worker->context = CL_CHECK_ERR(clCreateContext(NULL, 1, &worker->device_id, NULL, NULL, &_err));
-
-      cl_int mem_err;
-      size_t blocks_mem_size = (size_t)nonces_per_run * ARGON2_MEMORY_COST * ARGON2_BLOCK_SIZE;
-      worker->mem_argon2_blocks = clCreateBuffer(worker->context, CL_MEM_READ_WRITE, blocks_mem_size, NULL, &mem_err);
-      if (mem_err != CL_SUCCESS)
-      {
-        fprintf(stderr, "Failed to allocate required memory.\n");
-        return CL_MEM_OBJECT_ALLOCATION_FAILURE;
-      }
-
-      worker->mem_initial_seed = CL_CHECK_ERR(clCreateBuffer(worker->context, CL_MEM_READ_WRITE, INITIAL_SEED_SIZE, NULL, &_err));
-      worker->mem_nonce = CL_CHECK_ERR(clCreateBuffer(worker->context, CL_MEM_READ_WRITE, sizeof(cl_uint), NULL, &_err));
-
-      worker->program = CL_CHECK_ERR(clCreateProgramWithSource(worker->context, 2, sources, NULL, &_err));
-      cl_int build_result = clBuildProgram(worker->program, 0, NULL, build_options, NULL, NULL);
+      cl_program program = CL_CHECK_ERR(clCreateProgramWithSource(context, 2, sources, NULL, &_err));
+      cl_int build_result = clBuildProgram(program, 0, NULL, build_options, NULL, NULL);
       if (build_result != CL_SUCCESS)
       {
         size_t log_size;
         char *log;
-        CL_CHECK(clGetProgramBuildInfo(worker->program, worker->device_id, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size));
+        CL_CHECK(clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size));
         log = malloc(log_size);
-        CL_CHECK(clGetProgramBuildInfo(worker->program, worker->device_id, CL_PROGRAM_BUILD_LOG, log_size, log, NULL));
+        CL_CHECK(clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG, log_size, log, NULL));
         fprintf(stderr, "Failed to build program: %s\n", log);
         free(log);
         return CL_BUILD_PROGRAM_FAILURE;
       }
 
-      worker->queue = CL_CHECK_ERR(clCreateCommandQueue(worker->context, worker->device_id, 0, &_err));
+      // Create workers for this device
+      miner->num_workers += num_threads;
+      miner->workers = (worker_t *)realloc(miner->workers, sizeof(worker_t) * miner->num_workers);
 
-      worker->kernel_init_memory = CL_CHECK_ERR(clCreateKernel(worker->program, "init_memory", &_err));
-      CL_CHECK(clSetKernelArg(worker->kernel_init_memory, 0, sizeof(cl_mem), &worker->mem_argon2_blocks));
-      CL_CHECK(clSetKernelArg(worker->kernel_init_memory, 1, sizeof(cl_mem), &worker->mem_initial_seed));
+      for (cl_uint thread_idx = 0; thread_idx < num_threads; thread_idx++)
+      {
+        worker_t *worker = &miner->workers[miner->num_workers - num_threads + thread_idx];
+        worker->device_index = global_device_idx;
+        worker->thread_index = thread_idx;
+        worker->device_id = device_id;
 
-      worker->kernel_argon2 = CL_CHECK_ERR(clCreateKernel(worker->program, "argon2", &_err));
-      CL_CHECK(clSetKernelArg(worker->kernel_argon2, 0, shmem_size, NULL));
-      CL_CHECK(clSetKernelArg(worker->kernel_argon2, 1, sizeof(cl_mem), &worker->mem_argon2_blocks));
+        strncpy(worker->device_name, device_name, sizeof(worker->device_name));
+        strncpy(worker->device_vendor, device_vendor, sizeof(worker->device_vendor));
+        strncpy(worker->driver_version, driver_version, sizeof(worker->driver_version));
+        strncpy(worker->device_version, device_version, sizeof(worker->device_version));
+        worker->max_compute_units = max_compute_units;
+        worker->max_clock_frequency = max_clock_frequency;
+        worker->max_mem_alloc_size = max_mem_alloc_size;
+        worker->global_mem_size = global_mem_size;
 
-      worker->kernel_find_nonce = CL_CHECK_ERR(clCreateKernel(worker->program, "get_nonce", &_err));
-      CL_CHECK(clSetKernelArg(worker->kernel_find_nonce, 0, sizeof(cl_mem), &worker->mem_argon2_blocks));
-      CL_CHECK(clSetKernelArg(worker->kernel_find_nonce, 3, sizeof(cl_mem), &worker->mem_nonce));
+        worker->nonces_per_run = (cl_uint)nonces_per_run;
 
-      worker->init_memory_global_size[0] = nonces_per_run;
-      worker->init_memory_global_size[1] = 2;
-      worker->init_memory_local_size[0] = 128;
-      worker->init_memory_local_size[1] = 2;
+        worker->context = context;
+        CL_CHECK(clRetainContext(context));
 
-      worker->argon2_global_size[0] = THREADS_PER_LANE;
-      worker->argon2_global_size[1] = nonces_per_run;
-      worker->argon2_local_size[0] = THREADS_PER_LANE;
-      worker->argon2_local_size[1] = jobs_per_block;
+        worker->program = program;
+        CL_CHECK(clRetainProgram(program));
 
-      worker->find_nonce_global_size[0] = nonces_per_run;
-      worker->find_nonce_local_size[0] = 256;
+        cl_int mem_err;
+        size_t blocks_mem_size = (size_t)nonces_per_run * ARGON2_MEMORY_COST * ARGON2_BLOCK_SIZE;
+        worker->mem_argon2_blocks = clCreateBuffer(worker->context, CL_MEM_READ_WRITE, blocks_mem_size, NULL, &mem_err);
+        if (mem_err != CL_SUCCESS)
+        {
+          fprintf(stderr, "Failed to allocate required memory.\n");
+          return CL_MEM_OBJECT_ALLOCATION_FAILURE;
+        }
 
-      worker_idx++;
+        worker->mem_initial_seed = CL_CHECK_ERR(clCreateBuffer(worker->context, CL_MEM_READ_WRITE, INITIAL_SEED_SIZE, NULL, &_err));
+        worker->mem_nonce = CL_CHECK_ERR(clCreateBuffer(worker->context, CL_MEM_READ_WRITE, sizeof(cl_uint), NULL, &_err));
+
+        worker->queue = CL_CHECK_ERR(clCreateCommandQueue(worker->context, worker->device_id, 0, &_err));
+
+        worker->kernel_init_memory = CL_CHECK_ERR(clCreateKernel(worker->program, "init_memory", &_err));
+        CL_CHECK(clSetKernelArg(worker->kernel_init_memory, 0, sizeof(cl_mem), &worker->mem_argon2_blocks));
+        CL_CHECK(clSetKernelArg(worker->kernel_init_memory, 1, sizeof(cl_mem), &worker->mem_initial_seed));
+
+        worker->kernel_argon2 = CL_CHECK_ERR(clCreateKernel(worker->program, "argon2", &_err));
+        CL_CHECK(clSetKernelArg(worker->kernel_argon2, 0, shmem_size, NULL));
+        CL_CHECK(clSetKernelArg(worker->kernel_argon2, 1, sizeof(cl_mem), &worker->mem_argon2_blocks));
+
+        worker->kernel_find_nonce = CL_CHECK_ERR(clCreateKernel(worker->program, "get_nonce", &_err));
+        CL_CHECK(clSetKernelArg(worker->kernel_find_nonce, 0, sizeof(cl_mem), &worker->mem_argon2_blocks));
+        CL_CHECK(clSetKernelArg(worker->kernel_find_nonce, 3, sizeof(cl_mem), &worker->mem_nonce));
+
+        worker->init_memory_global_size[0] = nonces_per_run;
+        worker->init_memory_global_size[1] = 2;
+        worker->init_memory_local_size[0] = 128;
+        worker->init_memory_local_size[1] = 2;
+
+        worker->argon2_global_size[0] = THREADS_PER_LANE;
+        worker->argon2_global_size[1] = nonces_per_run;
+        worker->argon2_local_size[0] = THREADS_PER_LANE;
+        worker->argon2_local_size[1] = jobs_per_block;
+
+        worker->find_nonce_global_size[0] = nonces_per_run;
+        worker->find_nonce_local_size[0] = 256;
+      }
+
+      CL_CHECK(clReleaseProgram(program));
+      CL_CHECK(clReleaseContext(context));
+
+      enabled_device_idx++;
     }
 
     free(devices);

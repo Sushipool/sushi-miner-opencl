@@ -24,9 +24,8 @@ public:
   {
     Nan::HandleScope scope;
     v8::Local<v8::Value> argv[] = {
-      Nan::Null(),
-      Nan::New<v8::Number>(result_nonce)
-    };
+        Nan::Null(),
+        Nan::New<v8::Number>(result_nonce)};
     callback->Call(2, argv, async_resource);
   }
 
@@ -35,8 +34,7 @@ public:
     Nan::HandleScope scope;
     v8::Local<v8::Value> argv[] = {
         Nan::New(this->ErrorMessage()).ToLocalChecked(),
-        Nan::Null()
-    };
+        Nan::Null()};
     callback->Call(2, argv, async_resource);
   }
 
@@ -46,7 +44,6 @@ private:
   uint32_t share_compact;
   uint32_t result_nonce;
 };
-
 
 class Miner : public Nan::ObjectWrap
 {
@@ -79,23 +76,35 @@ private:
     }
 
     // GPU to use
-    v8::Local<v8::Array> allowedDevicesArray = v8::Local<v8::Array>::Cast(info[0]);
-    uint32_t *allowedDevices = new uint32_t[allowedDevicesArray->Length()];
-    for (uint32_t i = 0; i < allowedDevicesArray->Length(); i++) {
-      allowedDevices[i] = Nan::To<uint32_t>(allowedDevicesArray->Get(i)).FromJust();
+    v8::Local<v8::Array> enabledDevicesArray = v8::Local<v8::Array>::Cast(info[0]);
+    uint32_t *enabledDevices = new uint32_t[enabledDevicesArray->Length()];
+    for (uint32_t i = 0; i < enabledDevicesArray->Length(); i++)
+    {
+      enabledDevices[i] = Nan::To<uint32_t>(enabledDevicesArray->Get(i)).FromJust();
     }
     // Allocated memory for each GPU (in MB)
     v8::Local<v8::Array> memorySizesArray = v8::Local<v8::Array>::Cast(info[1]);
     uint32_t *memorySizes = new uint32_t[memorySizesArray->Length()];
-    for (uint32_t i = 0; i < memorySizesArray->Length(); i++) {
+    for (uint32_t i = 0; i < memorySizesArray->Length(); i++)
+    {
       memorySizes[i] = Nan::To<uint32_t>(memorySizesArray->Get(i)).FromJust();
+    }
+    // Threads per GPU
+    v8::Local<v8::Array> threadsArray = v8::Local<v8::Array>::Cast(info[2]);
+    uint32_t *threads = new uint32_t[threadsArray->Length()];
+    for (uint32_t i = 0; i < threadsArray->Length(); i++)
+    {
+      threads[i] = Nan::To<uint32_t>(threadsArray->Get(i)).FromJust();
     }
 
     miner_t m;
-    cl_int ret = initialize_miner(&m, allowedDevices, allowedDevicesArray->Length(), memorySizes, memorySizesArray->Length());
+    cl_int ret = initialize_miner(&m, enabledDevices, enabledDevicesArray->Length(),
+                                  memorySizes, memorySizesArray->Length(),
+                                  threads, threadsArray->Length());
 
-    delete[] allowedDevices;
+    delete[] enabledDevices;
     delete[] memorySizes;
+    delete[] threads;
 
     if (ret != CL_SUCCESS)
     {
@@ -127,6 +136,7 @@ private:
       Nan::SetAccessor(worker, Nan::New("globalMemSize").ToLocalChecked(), GetGlobalMemSize);
       Nan::SetAccessor(worker, Nan::New("noncesPerRun").ToLocalChecked(), GetNoncesPerRun);
       Nan::SetAccessor(worker, Nan::New("deviceIndex").ToLocalChecked(), GetDeviceIndex);
+      Nan::SetAccessor(worker, Nan::New("threadIndex").ToLocalChecked(), GetThreadIndex);
       Nan::SetMethod(worker, "setup", SetupWorker);
       Nan::SetMethod(worker, "mineNonces", MineNonces);
 
@@ -205,6 +215,14 @@ private:
     worker_t *worker = (worker_t *)ext.As<v8::External>()->Value();
 
     info.GetReturnValue().Set(worker->device_index);
+  }
+
+  static NAN_GETTER(GetThreadIndex)
+  {
+    v8::Local<v8::Value> ext = Nan::GetPrivate(info.This(), Nan::New("worker").ToLocalChecked()).ToLocalChecked();
+    worker_t *worker = (worker_t *)ext.As<v8::External>()->Value();
+
+    info.GetReturnValue().Set(worker->thread_index);
   }
 
   static NAN_METHOD(SetupWorker)
