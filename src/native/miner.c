@@ -189,7 +189,7 @@ cl_int initialize_miner(miner_t *miner,
       const size_t shmem_size = jobs_per_block * ARGON2_BLOCK_SIZE;
 
       printf("  Device #%u: %s by %s:\n"
-             "    Driver %s, OpenCL %s\n"
+             "    Driver %s, %s\n"
              "    %u compute units @ %u MHz\n"
              "    Using %lu MB of global memory, nonces per run: %lu x %u thread(s)\n",
              global_device_idx, device_name, device_vendor,
