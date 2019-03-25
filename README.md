@@ -31,11 +31,37 @@ Nvidia: Please update to the latest Nvidia Cuda 10 drivers.
 AMD: Version 18.10 is recommended to avoid any issues.
 
 ## Mining Parameters
-"hashrate": 90,
 
-"devices": [0,1,2],
+```
+Parameter       Description                                            Data Type
 
-"memory": [1024,2048,3072]
+address         Nimiq wallet address                                    [string]
+                Example: "address": "NQ...",
+
+host            Pool server address
+                Example: "host": "eu.sushipool.com"                     [string]
+                
+port            Pool server port
+                Example: "port": "443"
+                Default: 443                                            [number]
+                
+name            Device name to show in the dashboard                    [string]
+                Example: "name": "My Miner"
+                
+hashrate        Expected hashrate in kH/s                               [number]
+                Example: "hashrate": 100
+                
+devices         GPU devices to use
+                Example: "devices": [0,1,2]
+                Default: All available GPUs                              [array]
+                
+memory          Allocated memory in Mb for each device
+                Example: "memory": [3072,3840,3840,3840]                 [array]
+                
+threads         Number of threads per GPU
+                Example: "threads": [1,1,2,2]
+                Default: 1                                               [array]
+```
 
 ### Links
 Website: https://sushipool.com
