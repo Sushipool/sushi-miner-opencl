@@ -44,6 +44,11 @@ host            Pool server address
 port            Pool server port
                 Example: "port": "443"
                 Default: 443                                            [number]
+
+consensus       Consensus method used
+                Possible values are "dumb" or "nano"
+                Note that "dumb" mode (i.e. no consensus) only works with SushiPool.
+                Example: "consensus": "nano"                            [string]
                 
 name            Device name to show in the dashboard                    [string]
                 Example: "name": "My Miner"

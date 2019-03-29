@@ -4,9 +4,11 @@ const JSON5 = require('json5');
 const pjson = require('./package.json');
 const Nimiq = require('@nimiq/core');
 const NanoPoolMiner = require('./src/NanoPoolMiner');
+const SushiPoolMiner = require('./src/SushiPoolMiner');
+const crypto = require('crypto');
 const Log = Nimiq.Log;
 
-const TAG = 'SushiPoolMiner';
+const TAG = 'Nimiq OpenCL Miner';
 const $ = {};
 
 Log.instance.level = 'info';
@@ -42,29 +44,44 @@ if (!config) {
 }
 
 (async () => {
+    const address = config.address;
+    const deviceName = config.name || os.hostname();
+    const hashrate = (config.hashrate > 0) ? config.hashrate : 100; // 100 kH/s by default
+    const desiredSps = 5;
+    const startDifficulty = (1e3 * hashrate * desiredSps) / (1 << 16);
+    const minerVersion = 'OpenCL Miner ' + pjson.version;
+    const deviceData = { deviceName, startDifficulty, minerVersion };
+
+    Log.i(TAG, `Nimiq ${minerVersion} starting`);
+    Log.i(TAG, `- pool server      = ${config.host}:${config.port}`);
+    Log.i(TAG, `- address          = ${address}`);
+    Log.i(TAG, `- device name      = ${deviceName}`);
+
+    const consensusType = config.consensus || 'dumb';
+    const setupFunc = { // can add other miner types here
+        'dumb': setupSushiPoolMiner,
+        'nano': setupNanoPoolMiner
+    }
+    setupFunc[consensusType](address, config, deviceData);    
+
+})().catch(e => {
+    console.error(e);
+    process.exit(1);
+});
+
+async function setupNanoPoolMiner(addr, config, deviceData) {
+    Log.i(TAG, `Setting up setupNanoPoolMiner`);
 
     Nimiq.GenesisConfig.main();
     const networkConfig = new Nimiq.DumbNetworkConfig();
     $.consensus = await Nimiq.Consensus.nano(networkConfig);
-
     $.blockchain = $.consensus.blockchain;
     $.network = $.consensus.network;
 
-    const address = Nimiq.Address.fromUserFriendlyAddress(config.address);
-    const deviceName = config.name || os.hostname();
     const deviceId = Nimiq.BasePoolMiner.generateDeviceId(networkConfig);
-    const hashrate = (config.hashrate > 0) ? config.hashrate : 100; // 100 kH/s by default
-    const desiredSps = 5;
-    const startDifficulty = (1e3 * hashrate * desiredSps) / (1 << 16);
-    const minerVersion = 'GPU Miner ' + pjson.version;
-    const deviceData = { deviceName, startDifficulty, minerVersion };
-
-    Log.i(TAG, `Sushipool ${minerVersion} starting`);
-    Log.i(TAG, `- pool server      = ${config.host}:${config.port}`);
-    Log.i(TAG, `- address          = ${address.toUserFriendlyAddress()}`);
-    Log.i(TAG, `- device name      = ${deviceName}`);
     Log.i(TAG, `- device id        = ${deviceId}`);
 
+    const address = Nimiq.Address.fromUserFriendlyAddress(addr);
     $.miner = new NanoPoolMiner($.blockchain, $.network.time, address, deviceId, deviceData,
         config.devices, config.memory, config.threads);
 
@@ -99,8 +116,79 @@ if (!config) {
 
     Log.i(TAG, 'Connecting to Nimiq network');
     $.network.connect();
+}
 
-})().catch(e => {
-    console.error(e);
-    process.exit(1);
-});
+async function getDeviceId() {
+    const hostInfo = os.hostname() + '/' + Object.values(os.networkInterfaces()).map(i => i.map(a => a.address + '/' + a.mac).join('/')).join('/');
+    const hash = crypto.createHash('sha256');
+    hash.update(hostInfo);
+    return hash.digest().readUInt32LE(0);
+}
+
+async function setupSushiPoolMiner(address, config, deviceData) {
+    Log.i(TAG, `Setting up SushiPoolMiner`);
+
+    const poolMining = {
+        host: config.host,
+        port: config.port
+    }
+    const deviceId = await getDeviceId();
+    $.miner = new SushiPoolMiner(poolMining, address, deviceId, deviceData.deviceName, 
+        deviceData, deviceData.startDifficulty, deviceData.minerVersion);
+
+    $.miner.on('connected', () => {
+        Log.i(TAG,'Connected to pool');
+    });
+
+    $.miner.on('balance', (balance, confirmedBalance) => {
+        Log.i(TAG,`Balance: ${balance}, confirmed balance: ${confirmedBalance}`);
+    });
+
+    $.miner.on('settings', (address, extraData, targetCompact) => {
+        Log.i(TAG,`Share compact: ${targetCompact.toString(16)}`);
+        $.miner.currentTargetCompact = targetCompact;
+        $.miner.mineBlock(false);
+    });
+
+    $.miner.on('new-block', (blockHeader) => {
+        const height = blockHeader.readUInt32BE(134);
+        const hex = blockHeader.toString('hex');
+        Log.i(TAG,`New block #${height}: ${hex}`);
+
+        // Workaround duplicated blocks
+        if ($.miner.currentBlockHeader != undefined
+            && $.miner.currentBlockHeader.equals(blockHeader)) {
+            Log.w(TAG,'The same block arrived once again!');
+            return;
+        }
+
+        $.miner.currentBlockHeader = blockHeader;
+        $.miner.mineBlock(true);
+    });
+    $.miner.on('disconnected', () => {
+        $.miner._miner.stop();
+    });
+    $.miner.on('error', (reason) => {
+        Log.w(TAG,`Pool error: ${reason}`);
+    });
+
+    $.miner._miner.on('share', nonce => {
+        $.miner.submitShare(nonce);
+    });
+    $.miner._miner.on('hashrate', hashrates => {
+        const totalHashRate = hashrates.reduce((a, b) => a + b);
+        const gpuInfo = miner.gpuInfo;
+        const msg1 = `Hashrate: ${humanHashes(totalHashRate)} | `;
+        const msg2 = hashrates.map((hr, idx) => {
+            if (gpuInfo[idx].type === 'CPU') {
+                return `${gpuInfo[idx].type}: ${humanHashes(hr)}`;
+            } else {
+                return `${gpuInfo[idx].type}${gpuInfo[idx].idx}: ${humanHashes(hr)}`;
+            }
+        }).join(' | ');
+        const msg = msg1 + msg2;
+        Log.i(TAG, msg);
+    });
+
+
+}
