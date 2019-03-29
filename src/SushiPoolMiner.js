@@ -116,7 +116,7 @@ class SushiPoolMiner extends Nimiq.Observable {
 
     mineBlock(resetNonce) {
         if (this.currentBlockHeader && this.currentTargetCompact) {
-            miner.mine(this.currentBlockHeader, this.currentTargetCompact, resetNonce);
+            this._miner.mine(this.currentBlockHeader, this.currentTargetCompact, resetNonce);
         }
     };
 

@@ -177,13 +177,13 @@ async function setupSushiPoolMiner(address, config, deviceData) {
     });
     $.miner._miner.on('hashrate', hashrates => {
         const totalHashRate = hashrates.reduce((a, b) => a + b);
-        const gpuInfo = miner.gpuInfo;
-        const msg1 = `Hashrate: ${humanHashes(totalHashRate)} | `;
+        const gpuInfo = $.miner._miner.gpuInfo;
+        const msg1 = `Hashrate: ${humanHashrate(totalHashRate)} | `;
         const msg2 = hashrates.map((hr, idx) => {
             if (gpuInfo[idx].type === 'CPU') {
-                return `${gpuInfo[idx].type}: ${humanHashes(hr)}`;
+                return `${gpuInfo[idx].type}: ${humanHashrate(hr)}`;
             } else {
-                return `${gpuInfo[idx].type}${gpuInfo[idx].idx}: ${humanHashes(hr)}`;
+                return `${gpuInfo[idx].type}${gpuInfo[idx].idx}: ${humanHashrate(hr)}`;
             }
         }).join(' | ');
         const msg = msg1 + msg2;
