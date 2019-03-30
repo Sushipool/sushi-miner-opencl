@@ -69,20 +69,6 @@ struct block_th
 #define IDX_C(r) (IDX_X(r, 2))
 #define IDX_D(r) (IDX_X(r, 3))
 
-void move_block(struct block_th *dst, const struct block_th *src)
-{
-    *dst = *src;
-}
-
-void xor_block(struct block_th *dst, const struct block_th *src)
-{
-    dst->a ^= src->a;
-    dst->b ^= src->b;
-    dst->c ^= src->c;
-    dst->d ^= src->d;
-}
-
-__attribute__((overloadable))
 void load_block(struct block_th *dst, __global const struct block_g *src, uint thread)
 {
     dst->a = src->data[0 * THREADS_PER_LANE + thread];
@@ -92,15 +78,16 @@ void load_block(struct block_th *dst, __global const struct block_g *src, uint t
 }
 
 __attribute__((overloadable))
-void load_block(struct block_th *dst, __local const struct block_g *src, uint thread)
+void load_block_xor(struct block_th *dst, __global const struct block_g *src, uint thread)
 {
-    dst->a = src->data[0 * THREADS_PER_LANE + thread];
-    dst->b = src->data[1 * THREADS_PER_LANE + thread];
-    dst->c = src->data[2 * THREADS_PER_LANE + thread];
-    dst->d = src->data[3 * THREADS_PER_LANE + thread];
+    dst->a ^= src->data[0 * THREADS_PER_LANE + thread];
+    dst->b ^= src->data[1 * THREADS_PER_LANE + thread];
+    dst->c ^= src->data[2 * THREADS_PER_LANE + thread];
+    dst->d ^= src->data[3 * THREADS_PER_LANE + thread];
 }
 
-void load_block_xor(struct block_th *dst, __global const struct block_g *src, uint thread)
+__attribute__((overloadable))
+void load_block_xor(struct block_th *dst, __local const struct block_g *src, uint thread)
 {
     dst->a ^= src->data[0 * THREADS_PER_LANE + thread];
     dst->b ^= src->data[1 * THREADS_PER_LANE + thread];
@@ -179,101 +166,111 @@ void g(struct block_th *block)
     block->d = d;
 }
 
-void transpose1(struct block_th *block, __local struct block_g *buf, uint thread)
+uint get_ref_pos(struct block_th *prev, __local struct block_g *buf, uint curr_index, uint thread)
 {
-    store_block(buf, block, thread);
-    barrier(CLK_LOCAL_MEM_FENCE);
-    block->a = buf->data[IDX_A(1)];
-    block->b = buf->data[IDX_B(1)];
-    block->c = buf->data[IDX_C(1)];
-    block->d = buf->data[IDX_D(1)];
-}
-
-void transpose2(struct block_th *block, __local struct block_g *buf, uint thread)
-{
-    buf->data[IDX_A(4)] = block->a;
-    buf->data[IDX_B(4)] = block->b;
-    buf->data[IDX_C(4)] = block->c;
-    buf->data[IDX_D(4)] = block->d;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    load_block(block, buf, thread);
-}
-
-void shuffle_shift1(struct block_th *block, __local struct block_g *buf, uint thread)
-{
-    // index of "a" doesn't change
-    buf->data[IDX_B(1)] = block->b;
-    buf->data[IDX_C(1)] = block->c;
-    buf->data[IDX_D(1)] = block->d;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    block->b = buf->data[IDX_B(2)];
-    block->c = buf->data[IDX_C(2)];
-    block->d = buf->data[IDX_D(2)];
-}
-
-void shuffle_shift2(struct block_th *block, __local struct block_g *buf, uint thread)
-{
-    buf->data[IDX_A(2)] = block->a;
-    buf->data[IDX_B(2)] = block->b;
-    buf->data[IDX_C(2)] = block->c;
-    buf->data[IDX_D(2)] = block->d;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    block->a = buf->data[IDX_A(3)];
-    block->b = buf->data[IDX_B(3)];
-    block->c = buf->data[IDX_C(3)];
-    block->d = buf->data[IDX_D(3)];
-}
-
-void shuffle_shift3(struct block_th *block, __local struct block_g *buf, uint thread)
-{
-    // index of "a" doesn't change
-    buf->data[IDX_B(3)] = block->b;
-    buf->data[IDX_C(3)] = block->c;
-    buf->data[IDX_D(3)] = block->d;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    block->b = buf->data[IDX_B(4)];
-    block->c = buf->data[IDX_C(4)];
-    block->d = buf->data[IDX_D(4)];
-}
-
-void shuffle_block(struct block_th *block, __local struct block_g *buf, uint thread)
-{
-    transpose1(block, buf, thread);
-    g(block);
-    shuffle_shift1(block, buf, thread);
-    g(block);
-    shuffle_shift2(block, buf, thread);
-    g(block);
-    shuffle_shift3(block, buf, thread);
-    g(block);
-    transpose2(block, buf, thread);
-}
-
-uint get_ref_pos(struct block_th *prev, __local struct block_g *buf, uint offset, uint thread)
-{
-    buf->data[thread] = prev->a;
+    if (thread == 0)
+    {
+        buf->data[thread] = prev->a;
+    }
     barrier(CLK_LOCAL_MEM_FENCE);
 
     ulong v = buf->data[0];
     uint ref_index = u64_lo(v);
-    uint ref_area_size = offset - 1;
+    uint ref_area_size = curr_index - 1;
     ref_index = mul_hi(ref_index, ref_index);
     return ref_area_size - 1 - mul_hi(ref_area_size, ref_index);
 }
 
-void argon2_core(__global struct block_g *mem_ref,
-                 __global struct block_g *mem_curr,
-                 struct block_th *prev, struct block_th *tmp,
-                __local struct block_g *buf, uint thread)
+void argon2_core(__global struct block_g *memory,
+                 uint curr_index, uint ref_index, uint nonces_per_run,
+                 struct block_th *prev, __local struct block_g *buf, uint thread
+#ifdef LDS_CACHE_SIZE
+                 , __local struct block_g *cache
+#endif
+                 )
 {
-    load_block_xor(prev, mem_ref, thread);
-    move_block(tmp, prev);
+    struct block_th block;
 
-    shuffle_block(prev, buf, thread);
+    // Load from memory + XOR
+#ifdef LDS_CACHE_SIZE
+    if (ref_index < LDS_CACHE_SIZE)
+    {
+        load_block_xor(prev, &cache[ref_index], thread);
+    }
+    else {
+#endif
+        __global struct block_g * mem_ref = memory + ref_index * nonces_per_run;
+        load_block_xor(prev, mem_ref, thread);
+#ifdef LDS_CACHE_SIZE
+    }
+#endif
 
-    xor_block(prev, tmp);
+    // Transpose 1
+    store_block(buf, prev, thread);
+    barrier(CLK_LOCAL_MEM_FENCE);
+    block.a = buf->data[IDX_A(1)];
+    block.b = buf->data[IDX_B(1)];
+    block.c = buf->data[IDX_C(1)];
+    block.d = buf->data[IDX_D(1)];
 
-    store_block(mem_curr, prev, thread);
+    g(&block);
+
+    // Shuffle 1, index of A doesn't change
+    buf->data[IDX_B(1)] = block.b;
+    buf->data[IDX_C(1)] = block.c;
+    buf->data[IDX_D(1)] = block.d;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    block.b = buf->data[IDX_B(2)];
+    block.c = buf->data[IDX_C(2)];
+    block.d = buf->data[IDX_D(2)];
+
+    g(&block);
+
+    // Shuffle 2
+    buf->data[IDX_A(2)] = block.a;
+    buf->data[IDX_B(2)] = block.b;
+    buf->data[IDX_C(2)] = block.c;
+    buf->data[IDX_D(2)] = block.d;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    block.a = buf->data[IDX_A(3)];
+    block.b = buf->data[IDX_B(3)];
+    block.c = buf->data[IDX_C(3)];
+    block.d = buf->data[IDX_D(3)];
+
+    g(&block);
+
+    // Shuffle 3, index of A doesn't change
+    buf->data[IDX_B(3)] = block.b;
+    buf->data[IDX_C(3)] = block.c;
+    buf->data[IDX_D(3)] = block.d;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    block.b = buf->data[IDX_B(4)];
+    block.c = buf->data[IDX_C(4)];
+    block.d = buf->data[IDX_D(4)];
+
+    g(&block);
+
+    // Transpose 2 + XOR
+    buf->data[IDX_A(4)] = block.a;
+    buf->data[IDX_B(4)] = block.b;
+    buf->data[IDX_C(4)] = block.c;
+    buf->data[IDX_D(4)] = block.d;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    load_block_xor(prev, buf, thread);
+
+    // Store to memory
+#ifdef LDS_CACHE_SIZE
+    if (curr_index < LDS_CACHE_SIZE)
+    {
+        store_block(&cache[curr_index], prev, thread);
+    }
+    else {
+#endif
+        __global struct block_g *mem_curr = memory + curr_index * nonces_per_run;
+        store_block(mem_curr, prev, thread);
+#ifdef LDS_CACHE_SIZE
+    }
+#endif
 }
 
 __kernel
@@ -282,35 +279,38 @@ __attribute__((reqd_work_group_size(32, 2, 1)))
 #else
 __attribute__((reqd_work_group_size(32, 1, 1)))
 #endif
-void argon2(
-        __local struct block_g *shuffle_bufs,
-        __global struct block_g *memory)
+void argon2(__local struct block_g *lds, __global struct block_g *memory)
 {
-    size_t job_id = get_global_id(1);
+    uint job_id = get_global_id(1);
     uint warp   = get_local_id(1);
+    uint jobs_per_block  = get_local_size(1);
     uint thread = get_local_id(0);
-    size_t nonces_per_run = get_global_size(1);
+    uint nonces_per_run = get_global_size(1);
 
-    __local struct block_g *buf = &shuffle_bufs[warp];
+    __local struct block_g *buf = &lds[warp];
+#ifdef LDS_CACHE_SIZE
+    __local struct block_g *cache = &lds[jobs_per_block + LDS_CACHE_SIZE * warp];
+#endif
 
     /* select job's memory region: */
     memory += job_id;
 
-    struct block_th prev, tmp;
+    struct block_th first, prev;
+    load_block(&prev, memory + nonces_per_run, thread);
 
-    __global struct block_g *mem_lane = memory; // lane 0
-    __global struct block_g *mem_prev = mem_lane + nonces_per_run;
-    __global struct block_g *mem_curr = mem_lane + 2 * nonces_per_run;
+#ifdef LDS_CACHE_SIZE
+    load_block(&first, memory, thread);
+    store_block(&cache[0], &first, thread);
+    store_block(&cache[1], &prev, thread);
+#endif
 
-    load_block(&prev, mem_prev, thread);
-
-    for (uint offset = 2; offset < MEMORY_COST; offset++)
+    for (uint curr_index = 2; curr_index < MEMORY_COST; curr_index++)
     {
-        uint ref_index = get_ref_pos(&prev, buf, offset, thread);
-
-       __global struct block_g *mem_ref = memory + ref_index * nonces_per_run;
-        argon2_core(mem_ref, mem_curr, &prev, &tmp, buf, thread);
-
-        mem_curr += nonces_per_run;
+        uint ref_index = get_ref_pos(&prev, buf, curr_index, thread);
+        argon2_core(memory, curr_index, ref_index, nonces_per_run, &prev, buf, thread
+#ifdef LDS_CACHE_SIZE
+            , cache
+#endif
+        );
     }
 }

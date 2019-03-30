@@ -21,6 +21,8 @@
 #define IV6 0x1f83d9abfb41bd6bUL
 #define IV7 0x5be0cd19137e2179UL
 
+#define SWAP64(n) (as_ulong(as_uchar8(n).s76543210))
+
 constant uint sigma[12][16] = {
   {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
   {14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3},
@@ -188,42 +190,39 @@ void fill_first_block(global struct block_g *memory, global ulong *inseed, uint 
   *(dst++) = hash[7];
 }
 
-void compact_to_target(uint share_compact, uchar *target)
+void compact_to_target(uint share_compact, ulong *target)
 {
-  uint offset = (31 - (share_compact >> 24)); // offset in bytes
-  uint value = share_compact & 0xFFFFFF;
+  uint offset = (share_compact >> 24) - 3; // offset in bytes
+  ulong value = share_compact & 0xFFFFFF;
+  ulong hi = value >> ((8 - offset & 0x7) << 3);
+  ulong lo = value << ((offset & 0x7) << 3); // value << (8 * (offset % 8))
 
-  #pragma unroll
-  for (uint i = 0; i < ARGON2_HASH_LENGTH; i++)
-  {
-    target[i] = 0;
-  }
-  target[++offset] = (uchar) (value >> 16);
-  target[++offset] = (uchar) (value >> 8);
-  target[++offset] = (uchar) (value);
+  target[0] = (offset >= 24) ? lo : (offset > 20) ? hi : 0;
+  target[1] = (offset >= 24) ? 0 : (offset >= 16) ? lo : (offset > 12) ? hi : 0;
+  target[2] = (offset >= 16) ? 0 : (offset >= 8) ? lo : (offset > 4) ? hi : 0;
+  target[3] = (offset < 8) ? lo : 0;
 }
 
-bool is_proof_of_work(uchar *hash, uchar *target)
+bool is_proof_of_work(ulong *hash, ulong *target)
 {
   #pragma unroll
-  for (uint i = 0; i < ARGON2_HASH_LENGTH; i++)
+  for (uint i = 0; i < 4; i++)
   {
-    if (hash[i] < target[i]) return true;
-    if (hash[i] > target[i]) return false;
+    if (SWAP64(hash[i]) < target[i]) return true;
+    if (SWAP64(hash[i]) > target[i]) return false;
   }
   return true;
 }
 
 void hash_last_block(global struct block_g *memory, ulong *hash)
 {
-  ulong h[8];
   ulong buffer[BLAKE2B_QWORDS_IN_BLOCK];
   uint i, hi, lo;
   uint bytes_compressed = 0;
   uint bytes_remaining = ARGON2_BLOCK_SIZE;
   global uint *src = (global uint*) memory->data;
 
-  blake2b_init(h, ARGON2_HASH_LENGTH);
+  blake2b_init(hash, ARGON2_HASH_LENGTH);
 
   hi = *(src++);
   buffer[0] = ARGON2_HASH_LENGTH | ((ulong) hi << 32);
@@ -238,7 +237,7 @@ void hash_last_block(global struct block_g *memory, ulong *hash)
 
   bytes_compressed += BLAKE2B_BLOCK_SIZE;
   bytes_remaining -= (BLAKE2B_BLOCK_SIZE - sizeof(uint));
-  blake2b_compress(h, buffer, bytes_compressed, false);
+  blake2b_compress(hash, buffer, bytes_compressed, false);
 
   while (bytes_remaining > BLAKE2B_BLOCK_SIZE)
   {
@@ -251,7 +250,7 @@ void hash_last_block(global struct block_g *memory, ulong *hash)
     }
     bytes_compressed += BLAKE2B_BLOCK_SIZE;
     bytes_remaining -= BLAKE2B_BLOCK_SIZE;
-    blake2b_compress(h, buffer, bytes_compressed, false);
+    blake2b_compress(hash, buffer, bytes_compressed, false);
   }
 
   buffer[0] = *src;
@@ -261,12 +260,7 @@ void hash_last_block(global struct block_g *memory, ulong *hash)
     buffer[i] = 0;
   }
   bytes_compressed += bytes_remaining;
-  blake2b_compress(h, buffer, bytes_compressed, true);
-
-  hash[0] = h[0];
-  hash[1] = h[1];
-  hash[2] = h[2];
-  hash[3] = h[3];
+  blake2b_compress(hash, buffer, bytes_compressed, true);
 }
 
 
@@ -274,9 +268,9 @@ __kernel
 __attribute__((reqd_work_group_size(128, 2, 1)))
 void init_memory(global struct block_g *memory, global ulong *inseed, uint start_nonce)
 {
-  size_t job_id = get_global_id(0);
+  uint job_id = get_global_id(0);
   uint nonce = start_nonce + job_id;
-  size_t nonces_per_run = get_global_size(0);
+  uint nonces_per_run = get_global_size(0);
 
   uint block = get_local_id(1);
   memory += job_id + block * nonces_per_run;
@@ -287,17 +281,17 @@ __kernel
 __attribute__((reqd_work_group_size(256, 1, 1)))
 void get_nonce(global struct block_g *memory, uint start_nonce, uint share_compact, global uint *nonce_found)
 {
-  size_t job_id = get_global_id(0);
+  uint job_id = get_global_id(0);
   uint nonce = start_nonce + job_id;
-  size_t nonces_per_run = get_global_size(0);
+  uint nonces_per_run = get_global_size(0);
 
-  uchar hash[ARGON2_HASH_LENGTH];
-  uchar target[ARGON2_HASH_LENGTH];
+  ulong hash[8];
+  ulong target[4];
 
   memory += job_id + nonces_per_run * (MEMORY_COST - 1);
 
   compact_to_target(share_compact, target);
-  hash_last_block(memory, (ulong*) hash);
+  hash_last_block(memory, hash);
 
   if (is_proof_of_work(hash, target))
   {
