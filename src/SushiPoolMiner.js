@@ -1,20 +1,7 @@
 const Nimiq = require('@nimiq/core');
 const WebSocket = require('ws');
-const DumbGpuMiner = require('./DumbGpuMiner.js');
-
-function humanHashrate(hashes) {
-    let thresh = 1000;
-    if (Math.abs(hashes) < thresh) {
-        return hashes + ' H/s';
-    }
-    let units = ['kH/s', 'MH/s', 'GH/s', 'TH/s', 'PH/s', 'EH/s', 'ZH/s', 'YH/s'];
-    let u = -1;
-    do {
-        hashes /= thresh;
-        ++u;
-    } while (Math.abs(hashes) >= thresh && u < units.length - 1);
-    return hashes.toFixed(1) + ' ' + units[u];
-}
+const DumbGpuMiner = require('./DumbGpuMiner');
+const Utils = require('./Utils');
 
 const GENESIS_HASH_MAINNET = 'Jkqvik+YKKdsVQY12geOtGYwahifzANxC+6fZJyGnRI=';
 class SushiPoolMiner extends Nimiq.Observable {
@@ -38,12 +25,12 @@ class SushiPoolMiner extends Nimiq.Observable {
         this._miner.on('hashrate', hashrates => {
             const totalHashRate = hashrates.reduce((a, b) => a + b);
             const gpuInfo = this._miner.gpuInfo;
-            const msg1 = `Hashrate: ${humanHashrate(totalHashRate)} | `;
+            const msg1 = `Hashrate: ${Utils.humanHashrate(totalHashRate)} | `;
             const msg2 = hashrates.map((hr, idx) => {
                 if (gpuInfo[idx].type === 'CPU') {
-                    return `${gpuInfo[idx].type}: ${humanHashrate(hr)}`;
+                    return `${gpuInfo[idx].type}: ${Utils.humanHashrate(hr)}`;
                 } else {
-                    return `${gpuInfo[idx].type}${gpuInfo[idx].idx}: ${humanHashrate(hr)}`;
+                    return `${gpuInfo[idx].type}${gpuInfo[idx].idx}: ${Utils.humanHashrate(hr)}`;
                 }
             }).join(' | ');
             const msg = msg1 + msg2;

@@ -1,8 +1,7 @@
-const fs = require('fs');
 const os = require('os');
-const JSON5 = require('json5');
 const pjson = require('./package.json');
 const Nimiq = require('@nimiq/core');
+const Utils = require('./src/Utils');
 const NanoPoolMiner = require('./src/NanoPoolMiner');
 const SushiPoolMiner = require('./src/SushiPoolMiner');
 const crypto = require('crypto');
@@ -13,32 +12,7 @@ const $ = {};
 
 Log.instance.level = 'info';
 
-function humanHashrate(hashes) {
-    let thresh = 1000;
-    if (Math.abs(hashes) < thresh) {
-        return hashes + ' H/s';
-    }
-    let units = ['kH/s', 'MH/s', 'GH/s', 'TH/s', 'PH/s', 'EH/s', 'ZH/s', 'YH/s'];
-    let u = -1;
-    do {
-        hashes /= thresh;
-        ++u;
-    } while (Math.abs(hashes) >= thresh && u < units.length - 1);
-    return hashes.toFixed(1) + ' ' + units[u];
-}
-
-function readConfigFile(fileName) {
-    try {
-        const config = JSON5.parse(fs.readFileSync(fileName));
-        // TODO: Validate
-        return config;
-    } catch (e) {
-        Log.e(TAG, `Failed to read config file ${fileName}: ${e.message}`);
-        return false;
-    }
-}
-
-const config = readConfigFile('./miner.conf');
+const config = Utils.readConfigFile('./miner.conf');
 if (!config) {
     process.exit(1);
 }
@@ -92,7 +66,7 @@ async function setupNanoPoolMiner(addr, config, deviceData) {
     });
     $.miner.on('hashrates-changed', hashrates => {
         const totalHashRate = hashrates.reduce((a, b) => a + b, 0);
-        Log.i(TAG, `Hashrate: ${humanHashrate(totalHashRate)} | ${hashrates.map((hr, idx) => `GPU${idx}: ${humanHashrate(hr)}`).filter(hr => hr).join(' | ')}`);
+        Log.i(TAG, `Hashrate: ${Utils.humanHashrate(totalHashRate)} | ${hashrates.map((hr, idx) => `GPU${idx}: ${Utils.humanHashrate(hr)}`).filter(hr => hr).join(' | ')}`);
     });
 
     $.consensus.on('established', () => {
@@ -140,7 +114,8 @@ async function setupSushiPoolMiner(address, config, deviceData) {
     });
 
     $.miner.on('settings', (address, extraData, targetCompact) => {
-        Log.i(TAG,`Share compact: ${targetCompact.toString(16)}`);
+        const difficulty = Nimiq.BlockUtils.compactToDifficulty(targetCompact);
+        Nimiq.Log.i(SushiPoolMiner, `Set share difficulty: ${difficulty.toFixed(2)} (${targetCompact.toString(16)})`);
         $.miner.currentTargetCompact = targetCompact;
         $.miner.mineBlock(false);
     });
