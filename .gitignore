@@ -3,3 +3,4 @@
 /peer-key
 /miner.conf
 dist/
+.vscode/
