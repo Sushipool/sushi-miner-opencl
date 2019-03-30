@@ -32,7 +32,12 @@ if (!config) {
     Log.i(TAG, `- device name      = ${deviceName}`);
 
     // if not specified in the config file, defaults to dumb to make LTD happy :)
-    const consensusType = config.consensus || 'dumb'; 
+    let consensusType = config.consensus || 'dumb'; 
+    if (consensusType === 'dumb' && !config.host.toLowerCase().includes('sushipool')) {
+        Log.w(TAG, 'Dumb mode can only be used with SushiPool. Switching to nano.');
+        consensusType = 'nano';
+    }
+
     const setup = { // can add other miner types here
         'dumb': setupSushiPoolMiner,
         'nano': setupNanoPoolMiner
