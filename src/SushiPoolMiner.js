@@ -25,18 +25,8 @@ class SushiPoolMiner extends Nimiq.Observable {
             this.submitShare(nonce);
         });
         this._miner.on('hashrate', hashrates => {
-            const totalHashRate = hashrates.reduce((a, b) => a + b);
-            const gpuInfo = this._miner.gpuInfo;
-            const msg1 = `Hashrate: ${Utils.humanHashrate(totalHashRate)} | `;
-            const msg2 = hashrates.map((hr, idx) => {
-                if (gpuInfo[idx].type === 'CPU') {
-                    return `${gpuInfo[idx].type}: ${Utils.humanHashrate(hr)}`;
-                } else {
-                    return `${gpuInfo[idx].type}${gpuInfo[idx].idx}: ${Utils.humanHashrate(hr)}`;
-                }
-            }).join(' | ');
-            const msg = msg1 + msg2;
-            Nimiq.Log.i(SushiPoolMiner, msg);
+            const totalHashRate = hashrates.reduce((a, b) => a + b, 0);
+            Nimiq.Log.i(SushiPoolMiner, `Hashrate: ${Utils.humanHashrate(totalHashRate)} | ${hashrates.map((hr, idx) => `GPU${idx}: ${Utils.humanHashrate(hr)}`).filter(hr => hr).join(' | ')}`);    
         });
     
         this.currentBlockHeader = undefined;
