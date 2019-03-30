@@ -101,8 +101,7 @@ async function setupSushiPoolMiner(address, config, deviceData) {
         host: config.host,
         port: config.port
     }
-    const deviceId = await getDeviceId();
-    $.miner = new SushiPoolMiner(poolMining, address, deviceId, deviceData.deviceName, deviceData, 
+    $.miner = new SushiPoolMiner(poolMining, address, deviceData.deviceName, deviceData, 
         config.devices, config.memory, config.threads);
 
     $.miner.on('connected', () => {
@@ -141,11 +140,4 @@ async function setupSushiPoolMiner(address, config, deviceData) {
     $.miner.on('error', (reason) => {
         Log.w(TAG,`Pool error: ${reason}`);
     });
-}
-
-async function getDeviceId() {
-    const hostInfo = os.hostname() + '/' + Object.values(os.networkInterfaces()).map(i => i.map(a => a.address + '/' + a.mac).join('/')).join('/');
-    const hash = crypto.createHash('sha256');
-    hash.update(hostInfo);
-    return hash.digest().readUInt32LE(0);
 }

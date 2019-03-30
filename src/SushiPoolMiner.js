@@ -1,3 +1,5 @@
+const os = require('os');
+const crypto = require('crypto');
 const Nimiq = require('@nimiq/core');
 const WebSocket = require('ws');
 const DumbGpuMiner = require('./DumbGpuMiner');
@@ -6,11 +8,11 @@ const Utils = require('./Utils');
 const GENESIS_HASH_MAINNET = 'Jkqvik+YKKdsVQY12geOtGYwahifzANxC+6fZJyGnRI=';
 class SushiPoolMiner extends Nimiq.Observable {
 
-    constructor(pool, address, deviceId, deviceName, deviceData, allowedDevices, memorySizes, threads) {
+    constructor(pool, address, deviceName, deviceData, allowedDevices, memorySizes, threads) {
         super();
         this._ourAddress = address;
         this._pool = pool;
-        this._deviceId = deviceId;
+        this._deviceId = this._getDeviceId();
         this._deviceName = deviceName;
         this._deviceData = deviceData;
         this._host = pool.host;
@@ -40,6 +42,13 @@ class SushiPoolMiner extends Nimiq.Observable {
         this.currentBlockHeader = undefined;
         this.currentTargetCompact = undefined;    
     }
+
+    _getDeviceId() {
+        const hostInfo = os.hostname() + '/' + Object.values(os.networkInterfaces()).map(i => i.map(a => a.address + '/' + a.mac).join('/')).join('/');
+        const hash = crypto.createHash('sha256');
+        hash.update(hostInfo);
+        return hash.digest().readUInt32LE(0);
+    }    
 
     _connect() {
         Nimiq.Log.i(SushiPoolMiner, `Connecting to ${this._pool.host}:${this._pool.port}`);
