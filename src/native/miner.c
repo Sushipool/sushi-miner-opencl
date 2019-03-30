@@ -95,7 +95,6 @@ cl_int initialize_miner(miner_t *miner,
       printf("  Unsupported platform, skipped.\n");
       continue;
     }
-    char *build_options = (is_amd ? "-Werror -DAMD" : "-Werror");
 
     // Find all GPU devices
     cl_uint num_devices = 0;
@@ -186,7 +185,8 @@ cl_int initialize_miner(miner_t *miner,
 
       const cl_ulong nonces_per_run = (memory_size_mb * ONE_MB) / (ARGON2_BLOCK_SIZE * ARGON2_MEMORY_COST);
       const cl_uint jobs_per_block = (is_amd ? 2 : 1);
-      const size_t shmem_size = jobs_per_block * ARGON2_BLOCK_SIZE;
+      const cl_uint lds_cache_size = (is_amd ? 3 : 2); // Can't be 1
+      const size_t shmem_size = (1 + lds_cache_size) * jobs_per_block * ARGON2_BLOCK_SIZE;
 
       printf("  Device #%u: %s by %s:\n"
              "    Driver %s, %s\n"
@@ -198,6 +198,19 @@ cl_int initialize_miner(miner_t *miner,
              num_threads * memory_size_mb, nonces_per_run, num_threads);
 
       cl_context context = CL_CHECK_ERR(clCreateContext(NULL, 1, &device_id, NULL, NULL, &_err));
+
+      char build_options[255];
+      strcpy(build_options, "-Werror");
+      if (is_amd)
+      {
+        strcat(build_options, " -DAMD");
+      }
+      char opt[30];
+      if (lds_cache_size > 0)
+      {
+        sprintf(opt, " -DLDS_CACHE_SIZE=%u", lds_cache_size);
+        strcat(build_options, opt);
+      }
 
       cl_program program = CL_CHECK_ERR(clCreateProgramWithSource(context, 2, sources, NULL, &_err));
       cl_int build_result = clBuildProgram(program, 0, NULL, build_options, NULL, NULL);
@@ -324,7 +337,7 @@ cl_int release_miner(miner_t *miner)
 cl_int setup_worker(worker_t *worker, void *initial_seed)
 {
   CL_CHECK(clEnqueueWriteBuffer(worker->queue, worker->mem_initial_seed, CL_FALSE, 0, INITIAL_SEED_SIZE, initial_seed, 0, NULL, NULL));
-  CL_CHECK(clEnqueueWriteBuffer(worker->queue, worker->mem_nonce, CL_TRUE, 0, sizeof(cl_uint), &zero, 0, NULL, NULL));
+  CL_CHECK(clEnqueueWriteBuffer(worker->queue, worker->mem_nonce, CL_FALSE, 0, sizeof(cl_uint), &zero, 0, NULL, NULL));
   return CL_SUCCESS;
 }
 
@@ -346,7 +359,7 @@ cl_int mine_nonces(worker_t *worker, cl_uint start_nonce, cl_uint share_compact,
 
   if (*nonce > 0)
   {
-    CL_CHECK(clEnqueueWriteBuffer(worker->queue, worker->mem_nonce, CL_TRUE, 0, sizeof(cl_uint), &zero, 0, NULL, NULL));
+    CL_CHECK(clEnqueueWriteBuffer(worker->queue, worker->mem_nonce, CL_FALSE, 0, sizeof(cl_uint), &zero, 0, NULL, NULL));
   }
 
   return CL_SUCCESS;
