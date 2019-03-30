@@ -57,12 +57,14 @@ if (!config) {
     Log.i(TAG, `- address          = ${address}`);
     Log.i(TAG, `- device name      = ${deviceName}`);
 
-    const consensusType = config.consensus || 'dumb';
-    const setupFunc = { // can add other miner types here
+    // if not specified in the config file, defaults to dumb to make LTD happy :)
+    const consensusType = config.consensus || 'dumb'; 
+    const setup = { // can add other miner types here
         'dumb': setupSushiPoolMiner,
         'nano': setupNanoPoolMiner
     }
-    setupFunc[consensusType](address, config, deviceData);    
+    const createMiner = setup[consensusType];
+    createMiner(address, config, deviceData);    
 
 })().catch(e => {
     console.error(e);
@@ -70,7 +72,7 @@ if (!config) {
 });
 
 async function setupNanoPoolMiner(addr, config, deviceData) {
-    Log.i(TAG, `Setting up setupNanoPoolMiner`);
+    Log.i(TAG, `Setting up NanoPoolMiner`);
 
     Nimiq.GenesisConfig.main();
     const networkConfig = new Nimiq.DumbNetworkConfig();
@@ -118,13 +120,6 @@ async function setupNanoPoolMiner(addr, config, deviceData) {
     $.network.connect();
 }
 
-async function getDeviceId() {
-    const hostInfo = os.hostname() + '/' + Object.values(os.networkInterfaces()).map(i => i.map(a => a.address + '/' + a.mac).join('/')).join('/');
-    const hash = crypto.createHash('sha256');
-    hash.update(hostInfo);
-    return hash.digest().readUInt32LE(0);
-}
-
 async function setupSushiPoolMiner(address, config, deviceData) {
     Log.i(TAG, `Setting up SushiPoolMiner`);
 
@@ -133,8 +128,8 @@ async function setupSushiPoolMiner(address, config, deviceData) {
         port: config.port
     }
     const deviceId = await getDeviceId();
-    $.miner = new SushiPoolMiner(poolMining, address, deviceId, deviceData.deviceName, 
-        deviceData, deviceData.startDifficulty, deviceData.minerVersion);
+    $.miner = new SushiPoolMiner(poolMining, address, deviceId, deviceData.deviceName, deviceData, 
+        config.devices, config.memory, config.threads);
 
     $.miner.on('connected', () => {
         Log.i(TAG,'Connected to pool');
@@ -171,24 +166,11 @@ async function setupSushiPoolMiner(address, config, deviceData) {
     $.miner.on('error', (reason) => {
         Log.w(TAG,`Pool error: ${reason}`);
     });
+}
 
-    $.miner._miner.on('share', nonce => {
-        $.miner.submitShare(nonce);
-    });
-    $.miner._miner.on('hashrate', hashrates => {
-        const totalHashRate = hashrates.reduce((a, b) => a + b);
-        const gpuInfo = $.miner._miner.gpuInfo;
-        const msg1 = `Hashrate: ${humanHashrate(totalHashRate)} | `;
-        const msg2 = hashrates.map((hr, idx) => {
-            if (gpuInfo[idx].type === 'CPU') {
-                return `${gpuInfo[idx].type}: ${humanHashrate(hr)}`;
-            } else {
-                return `${gpuInfo[idx].type}${gpuInfo[idx].idx}: ${humanHashrate(hr)}`;
-            }
-        }).join(' | ');
-        const msg = msg1 + msg2;
-        Log.i(TAG, msg);
-    });
-
-
+async function getDeviceId() {
+    const hostInfo = os.hostname() + '/' + Object.values(os.networkInterfaces()).map(i => i.map(a => a.address + '/' + a.mac).join('/')).join('/');
+    const hash = crypto.createHash('sha256');
+    hash.update(hostInfo);
+    return hash.digest().readUInt32LE(0);
 }

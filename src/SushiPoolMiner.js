@@ -2,18 +2,19 @@ const Nimiq = require('@nimiq/core');
 const WebSocket = require('ws');
 const DumbGpuMiner = require('./DumbGpuMiner.js');
 
-const INITIAL_SEED_SIZE = 256;
-const MAX_NONCE = 2 ** 32;
-const HASHRATE_MOVING_AVERAGE = 5; // seconds
-const HASHRATE_REPORT_INTERVAL = 5; // seconds
-
-const ARGON2_ITERATIONS = 1;
-const ARGON2_LANES = 1;
-const ARGON2_MEMORY_COST = 512;
-const ARGON2_VERSION = 0x13;
-const ARGON2_TYPE = 0; // Argon2D
-const ARGON2_SALT = 'nimiqrocks!';
-const ARGON2_HASH_LENGTH = 32;
+function humanHashrate(hashes) {
+    let thresh = 1000;
+    if (Math.abs(hashes) < thresh) {
+        return hashes + ' H/s';
+    }
+    let units = ['kH/s', 'MH/s', 'GH/s', 'TH/s', 'PH/s', 'EH/s', 'ZH/s', 'YH/s'];
+    let u = -1;
+    do {
+        hashes /= thresh;
+        ++u;
+    } while (Math.abs(hashes) >= thresh && u < units.length - 1);
+    return hashes.toFixed(1) + ' ' + units[u];
+}
 
 const GENESIS_HASH_MAINNET = 'Jkqvik+YKKdsVQY12geOtGYwahifzANxC+6fZJyGnRI=';
 class SushiPoolMiner extends Nimiq.Observable {
@@ -31,6 +32,24 @@ class SushiPoolMiner extends Nimiq.Observable {
         this._connect();
 
         this._miner = new DumbGpuMiner(allowedDevices,  memorySizes, threads);
+        this._miner.on('share', nonce => {
+            this.submitShare(nonce);
+        });
+        this._miner.on('hashrate', hashrates => {
+            const totalHashRate = hashrates.reduce((a, b) => a + b);
+            const gpuInfo = this._miner.gpuInfo;
+            const msg1 = `Hashrate: ${humanHashrate(totalHashRate)} | `;
+            const msg2 = hashrates.map((hr, idx) => {
+                if (gpuInfo[idx].type === 'CPU') {
+                    return `${gpuInfo[idx].type}: ${humanHashrate(hr)}`;
+                } else {
+                    return `${gpuInfo[idx].type}${gpuInfo[idx].idx}: ${humanHashrate(hr)}`;
+                }
+            }).join(' | ');
+            const msg = msg1 + msg2;
+            Nimiq.Log.i(SushiPoolMiner, msg);
+        });
+    
         this.currentBlockHeader = undefined;
         this.currentTargetCompact = undefined;    
     }
@@ -60,7 +79,7 @@ class SushiPoolMiner extends Nimiq.Observable {
 
     _register() {
         const deviceName = this._deviceName || '';
-        const minerVersion = this._deviceData._minerVersion;
+        const minerVersion = this._deviceData.minerVersion;
         Nimiq.Log.i(SushiPoolMiner, `Registering to pool (${this._host}) using device id ${this._deviceId} (${deviceName}) as a dumb client.`);
         this._send({
             message: 'register',
