@@ -1,70 +1,63 @@
-const fs = require('fs');
 const os = require('os');
-const JSON5 = require('json5');
 const pjson = require('./package.json');
 const Nimiq = require('@nimiq/core');
+const Utils = require('./src/Utils');
 const NanoPoolMiner = require('./src/NanoPoolMiner');
+const SushiPoolMiner = require('./src/SushiPoolMiner');
+const crypto = require('crypto');
 const Log = Nimiq.Log;
 
-const TAG = 'SushiPoolMiner';
+const TAG = 'Nimiq OpenCL Miner';
 const $ = {};
 
 Log.instance.level = 'info';
 
-function humanHashrate(hashes) {
-    let thresh = 1000;
-    if (Math.abs(hashes) < thresh) {
-        return hashes + ' H/s';
-    }
-    let units = ['kH/s', 'MH/s', 'GH/s', 'TH/s', 'PH/s', 'EH/s', 'ZH/s', 'YH/s'];
-    let u = -1;
-    do {
-        hashes /= thresh;
-        ++u;
-    } while (Math.abs(hashes) >= thresh && u < units.length - 1);
-    return hashes.toFixed(1) + ' ' + units[u];
-}
-
-function readConfigFile(fileName) {
-    try {
-        const config = JSON5.parse(fs.readFileSync(fileName));
-        // TODO: Validate
-        return config;
-    } catch (e) {
-        Log.e(TAG, `Failed to read config file ${fileName}: ${e.message}`);
-        return false;
-    }
-}
-
-const config = readConfigFile('./miner.conf');
+const config = Utils.readConfigFile('./miner.conf');
 if (!config) {
     process.exit(1);
 }
 
 (async () => {
+    const address = config.address;
+    const deviceName = config.name || os.hostname();
+    const hashrate = (config.hashrate > 0) ? config.hashrate : 100; // 100 kH/s by default
+    const desiredSps = 5;
+    const startDifficulty = (1e3 * hashrate * desiredSps) / (1 << 16);
+    const minerVersion = 'OpenCL Miner ' + pjson.version;
+    const deviceData = { deviceName, startDifficulty, minerVersion };
+
+    Log.i(TAG, `Nimiq ${minerVersion} starting`);
+    Log.i(TAG, `- pool server      = ${config.host}:${config.port}`);
+    Log.i(TAG, `- address          = ${address}`);
+    Log.i(TAG, `- device name      = ${deviceName}`);
+
+    // if not specified in the config file, defaults to dumb to make LTD happy :)
+    const consensusType = config.consensus || 'dumb'; 
+    const setup = { // can add other miner types here
+        'dumb': setupSushiPoolMiner,
+        'nano': setupNanoPoolMiner
+    }
+    const createMiner = setup[consensusType];
+    createMiner(address, config, deviceData);    
+
+})().catch(e => {
+    console.error(e);
+    process.exit(1);
+});
+
+async function setupNanoPoolMiner(addr, config, deviceData) {
+    Log.i(TAG, `Setting up NanoPoolMiner`);
 
     Nimiq.GenesisConfig.main();
     const networkConfig = new Nimiq.DumbNetworkConfig();
     $.consensus = await Nimiq.Consensus.nano(networkConfig);
-
     $.blockchain = $.consensus.blockchain;
     $.network = $.consensus.network;
 
-    const address = Nimiq.Address.fromUserFriendlyAddress(config.address);
-    const deviceName = config.name || os.hostname();
     const deviceId = Nimiq.BasePoolMiner.generateDeviceId(networkConfig);
-    const hashrate = (config.hashrate > 0) ? config.hashrate : 100; // 100 kH/s by default
-    const desiredSps = 5;
-    const startDifficulty = (1e3 * hashrate * desiredSps) / (1 << 16);
-    const minerVersion = 'GPU Miner ' + pjson.version;
-    const deviceData = { deviceName, startDifficulty, minerVersion };
-
-    Log.i(TAG, `Sushipool ${minerVersion} starting`);
-    Log.i(TAG, `- pool server      = ${config.host}:${config.port}`);
-    Log.i(TAG, `- address          = ${address.toUserFriendlyAddress()}`);
-    Log.i(TAG, `- device name      = ${deviceName}`);
     Log.i(TAG, `- device id        = ${deviceId}`);
 
+    const address = Nimiq.Address.fromUserFriendlyAddress(addr);
     $.miner = new NanoPoolMiner($.blockchain, $.network.time, address, deviceId, deviceData,
         config.devices, config.memory, config.threads);
 
@@ -73,7 +66,7 @@ if (!config) {
     });
     $.miner.on('hashrates-changed', hashrates => {
         const totalHashRate = hashrates.reduce((a, b) => a + b, 0);
-        Log.i(TAG, `Hashrate: ${humanHashrate(totalHashRate)} | ${hashrates.map((hr, idx) => `GPU${idx}: ${humanHashrate(hr)}`).filter(hr => hr).join(' | ')}`);
+        Log.i(TAG, `Hashrate: ${Utils.humanHashrate(totalHashRate)} | ${hashrates.map((hr, idx) => `GPU${idx}: ${Utils.humanHashrate(hr)}`).filter(hr => hr).join(' | ')}`);
     });
 
     $.consensus.on('established', () => {
@@ -99,8 +92,52 @@ if (!config) {
 
     Log.i(TAG, 'Connecting to Nimiq network');
     $.network.connect();
+}
 
-})().catch(e => {
-    console.error(e);
-    process.exit(1);
-});
+async function setupSushiPoolMiner(address, config, deviceData) {
+    Log.i(TAG, `Setting up SushiPoolMiner`);
+
+    const poolMining = {
+        host: config.host,
+        port: config.port
+    }
+    $.miner = new SushiPoolMiner(poolMining, address, deviceData.deviceName, deviceData, 
+        config.devices, config.memory, config.threads);
+
+    $.miner.on('connected', () => {
+        Log.i(TAG,'Connected to pool');
+    });
+
+    $.miner.on('balance', (balance, confirmedBalance) => {
+        Log.i(TAG,`Balance: ${balance}, confirmed balance: ${confirmedBalance}`);
+    });
+
+    $.miner.on('settings', (address, extraData, targetCompact) => {
+        const difficulty = Nimiq.BlockUtils.compactToDifficulty(targetCompact);
+        Nimiq.Log.i(SushiPoolMiner, `Set share difficulty: ${difficulty.toFixed(2)} (${targetCompact.toString(16)})`);
+        $.miner.currentTargetCompact = targetCompact;
+        $.miner.mineBlock(false);
+    });
+
+    $.miner.on('new-block', (blockHeader) => {
+        const height = blockHeader.readUInt32BE(134);
+        const hex = blockHeader.toString('hex');
+        Log.i(TAG,`New block #${height}: ${hex}`);
+
+        // Workaround duplicated blocks
+        if ($.miner.currentBlockHeader != undefined
+            && $.miner.currentBlockHeader.equals(blockHeader)) {
+            Log.w(TAG,'The same block arrived once again!');
+            return;
+        }
+
+        $.miner.currentBlockHeader = blockHeader;
+        $.miner.mineBlock(true);
+    });
+    $.miner.on('disconnected', () => {
+        $.miner._miner.stop();
+    });
+    $.miner.on('error', (reason) => {
+        Log.w(TAG,`Pool error: ${reason}`);
+    });
+}
