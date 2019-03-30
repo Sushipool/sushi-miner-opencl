@@ -59,7 +59,7 @@ class DumbGpuMiner extends Nimiq.Observable {
                         if (this._miningEnabled && this._nonce < MAX_NONCE) {
                             next();
                         }
-                    }, startNonce);
+                    }, startNonce, shareCompact);
                 };
 
                 w.setup(this._getInitialSeed(blockHeader), shareCompact);
