@@ -1,36 +1,27 @@
 const os = require('os');
 const crypto = require('crypto');
 const Nimiq = require('@nimiq/core');
+const Miner = require('./Miner');
 const WebSocket = require('ws');
-const DumbGpuMiner = require('./DumbGpuMiner');
-const Utils = require('./Utils');
 
 const GENESIS_HASH_MAINNET = 'Jkqvik+YKKdsVQY12geOtGYwahifzANxC+6fZJyGnRI=';
+
 class SushiPoolMiner extends Nimiq.Observable {
 
-    constructor(pool, address, deviceName, deviceData, allowedDevices, memorySizes, threads) {
+    constructor(address, deviceData, allowedDevices, memorySizes, threads) {
         super();
-        this._ourAddress = address;
-        this._pool = pool;
-        this._deviceId = this._getDeviceId();
-        this._deviceName = deviceName;
-        this._deviceData = deviceData;
-        this._host = pool.host;
-        this.on('share', (block, fullValid) => this._onBlockMined(block, fullValid));
-        this._startDifficulty = deviceData.startDifficulty;
-        this._connect();
 
-        this._miner = new DumbGpuMiner(allowedDevices,  memorySizes, threads);
+        this._address = address;
+        this._deviceId = this._getDeviceId();
+        this._deviceData = deviceData;
+
+        this._miner = new Miner(allowedDevices, memorySizes, threads);
         this._miner.on('share', nonce => {
-            this.submitShare(nonce);
+            this._submitShare(nonce);
         });
-        this._miner.on('hashrate', hashrates => {
-            const totalHashRate = hashrates.reduce((a, b) => a + b, 0);
-            Nimiq.Log.i(SushiPoolMiner, `Hashrate: ${Utils.humanHashrate(totalHashRate)} | ${hashrates.map((hr, idx) => `GPU${idx}: ${Utils.humanHashrate(hr)}`).filter(hr => hr).join(' | ')}`);    
+        this._miner.on('hashrate-changed', hashrates => {
+            this.fire('hashrate-changed', hashrates);
         });
-    
-        this.currentBlockHeader = undefined;
-        this.currentTargetCompact = undefined;    
     }
 
     _getDeviceId() {
@@ -38,11 +29,13 @@ class SushiPoolMiner extends Nimiq.Observable {
         const hash = crypto.createHash('sha256');
         hash.update(hostInfo);
         return hash.digest().readUInt32LE(0);
-    }    
+    }
 
-    _connect() {
-        Nimiq.Log.i(SushiPoolMiner, `Connecting to ${this._pool.host}:${this._pool.port}`);
-        this._ws = new WebSocket(`wss://${this._pool.host}:${this._pool.port}`);
+    connect(host, port) {
+        Nimiq.Log.i(SushiPoolMiner, `Connecting to ${host}:${port}`);
+        this._host = host;
+        this._closed = false;
+        this._ws = new WebSocket(`wss://${host}:${port}`);
 
         this._ws.on('open', () => {
             this._register();
@@ -50,61 +43,97 @@ class SushiPoolMiner extends Nimiq.Observable {
 
         this._ws.on('close', (code, reason) => {
             let timeout = Math.floor(Math.random() * 25) + 5;
-            Nimiq.Log.w(SushiPoolMiner, 'Connection lost. Reconnecting in ' + timeout + ' seconds');
-            this.fire('disconnected');
+            Nimiq.Log.w(SushiPoolMiner, `Connection lost. Reconnecting in ${timeout} seconds`);
+            this._stopMining();
             if (!this._closed) {
-                setTimeout(() => this._connect(), timeout * 1000);
+                setTimeout(() => this.connect(host, port), timeout * 1000);
             }
         });
 
         this._ws.on('message', (msg) => this._onMessage(JSON.parse(msg)));
 
-        this._ws.on('error', (e) => Nimiq.Log.e(`WS error - ${e.message}`, e));
+        this._ws.on('error', (e) => Nimiq.Log.e(SushiPoolMiner, `WS error - ${e.message}`, e));
     }
 
+    disconnect() {
+        this._closed = true;
+        this._ws.close();
+    }
 
     _register() {
-        const deviceName = this._deviceName || '';
-        const minerVersion = this._deviceData.minerVersion;
-        Nimiq.Log.i(SushiPoolMiner, `Registering to pool (${this._host}) using device id ${this._deviceId} (${deviceName}) as a dumb client.`);
+        Nimiq.Log.i(SushiPoolMiner, `Registering to pool (${this._host}) using device id ${this._deviceId} (${this._deviceData.deviceName}) as a dumb client.`);
         this._send({
             message: 'register',
             mode: 'dumb',
-            address: this._ourAddress,
+            address: this._address,
             deviceId: this._deviceId,
             startDifficulty: this._deviceData.startDifficulty,
-            deviceName: deviceName,
+            deviceName: this._deviceData.deviceName,
             deviceData: this._deviceData,
-            minerVersion: minerVersion,
+            minerVersion: this._deviceData.minerVersion,
             genesisHash: GENESIS_HASH_MAINNET
-        })
+        });
     }
-
 
     _onMessage(msg) {
         if (!msg || !msg.message) return;
         switch (msg.message) {
             case 'registered':
-                this.fire('connected');
+                Nimiq.Log.i(SushiPoolMiner, 'Connected to pool');
                 break;
             case 'settings':
-                this.fire('settings', msg.address, Buffer.from(msg.extraData, 'base64'), msg.targetCompact);
+                this._onNewPoolSettings(msg.address, Buffer.from(msg.extraData, 'base64'), msg.targetCompact, msg.nonce);
+                break;
+            case 'balance':
+                this._onBalance(msg.balance, msg.confirmedBalance);
                 break;
             case 'new-block':
-                this.fire('new-block', Buffer.from(msg.blockHeader, 'base64'));
+                this._onNewBlock(Buffer.from(msg.blockHeader, 'base64'));
                 break;
             case 'error':
-                Nimiq.Log.w(`Pool error: ${msg.reason}`);
+                Nimiq.Log.w(SushiPoolMiner, `Pool error: ${msg.reason}`);
                 break;
         }
     }
 
-    submitShare(nonce) {
+    _startMining() {
+        const height = this._currentBlockHeader.readUInt32BE(134);
+        Nimiq.Log.i(SushiPoolMiner, `Starting work on block #${height}`);
+        this._miner.startMiningOnBlock(this._currentBlockHeader);
+    }
+
+    _stopMining() {
+        this._miner.stop();
+        delete this._currentBlockHeader;
+    }
+
+    _onNewPoolSettings(address, extraData, shareCompact, nonce) {
+        const difficulty = Nimiq.BlockUtils.compactToDifficulty(shareCompact);
+        Nimiq.Log.i(SushiPoolMiner, `Set share difficulty: ${difficulty.toFixed(2)} (${shareCompact.toString(16)})`);
+        this._miner.setShareCompact(shareCompact);
+    }
+
+    _onBalance(balance, confirmedBalance) {
+        Nimiq.Log.i(SushiPoolMiner, `Balance: ${Nimiq.Policy.lunasToCoins(balance)} NIM, confirmed balance: ${Nimiq.Policy.lunasToCoins(confirmedBalance)} NIM`);
+    }
+
+    _onNewBlock(blockHeader) {
+        // Workaround duplicated blocks
+        if (this._currentBlockHeader != undefined && this._currentBlockHeader.equals(blockHeader)) {
+            Nimiq.Log.w(SushiPoolMiner, 'The same block appears once again!');
+            return;
+        }
+
+        this._currentBlockHeader = blockHeader;
+        this._startMining();
+    }
+
+    _submitShare(nonce) {
         this._send({
             message: 'share',
             nonce
         });
-        Nimiq.Log.i(SushiPoolMiner, `Share found, nonce: ${nonce}`);
+        this.fire('share', nonce);
     }
 
     _send(msg) {
@@ -112,19 +141,12 @@ class SushiPoolMiner extends Nimiq.Observable {
             this._ws.send(JSON.stringify(msg));
         } catch (e) {
             const readyState = this._ws.readyState;
-            Nimiq.Log.e(`WS error - ${e.message}`);
-            if (readyState === 3) {
+            Nimiq.Log.e(SushiPoolMiner, `WS error - ${e.message}`);
+            if (readyState === WebSocket.CLOSED) {
                 this._ws.close();
             }
         }
     }
-
-    mineBlock(resetNonce) {
-        if (this.currentBlockHeader && this.currentTargetCompact) {
-            this._miner.mine(this.currentBlockHeader, this.currentTargetCompact, resetNonce);
-        }
-    };
-
 }
 
 module.exports = SushiPoolMiner;

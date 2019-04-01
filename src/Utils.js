@@ -21,7 +21,7 @@ exports.readConfigFile = function(fileName) {
         // TODO: Validate
         return config;
     } catch (e) {
-        Log.e(TAG, `Failed to read config file ${fileName}: ${e.message}`);
+        Log.e(`Failed to read config file ${fileName}: ${e.message}`);
         return false;
     }
 }

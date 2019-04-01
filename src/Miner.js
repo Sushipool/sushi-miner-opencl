@@ -1,8 +1,10 @@
 const Nimiq = require('@nimiq/core');
-const NativeMiner = require('bindings')('nimiq_miner.node');
+const NativeMiner = require('bindings')('nimiq_miner_opencl.node');
 
 const INITIAL_SEED_SIZE = 256;
 const MAX_NONCE = 2 ** 32;
+
+// TODO: configurable interval
 const HASHRATE_MOVING_AVERAGE = 5; // seconds
 const HASHRATE_REPORT_INTERVAL = 5; // seconds
 
@@ -14,7 +16,7 @@ const ARGON2_TYPE = 0; // Argon2D
 const ARGON2_SALT = 'nimiqrocks!';
 const ARGON2_HASH_LENGTH = 32;
 
-class DumbGpuMiner extends Nimiq.Observable {
+class Miner extends Nimiq.Observable {
 
     constructor(allowedDevices, memorySizes, threads) {
         super();
@@ -30,52 +32,39 @@ class DumbGpuMiner extends Nimiq.Observable {
         const miner = new NativeMiner.Miner(allowedDevices, memorySizes, threads);
         const workers = miner.getWorkers();
 
-        this._hashes = new Array(workers.length).fill(0);
-        this._lastHashRates = this._hashes.map(_ => []);
+        this._hashes = [];
+        this._lastHashRates = [];
 
-        this._miner = miner;
-        this._workers = workers.map((w, idx) => {
+        this._miner = miner; // Keep GC away
+        this._workers = workers.map(w => {
             const noncesPerRun = w.noncesPerRun;
+            const idx = w.deviceIndex;
 
-            return (blockHeader, shareCompact) => {
+            return (blockHeader) => {
                 const workId = this._workId;
                 const next = () => {
-                    //console.log(`@Nonce ${this._nonce}`);
                     const startNonce = this._nonce;
                     this._nonce += noncesPerRun;
                     w.mineNonces((error, nonce) => {
                         if (error) {
                             throw error;
                         }
-                        this._hashes[idx] += noncesPerRun;
+                        this._hashes[idx] = (this._hashes[idx] || 0) + noncesPerRun;
                         // Another block arrived
                         if (workId !== this._workId) {
-                            //console.log(`Stopped working on stale block, work id #${workId}`);
                             return;
                         }
-                        if (nonce !== 0) {
+                        if (nonce > 0) {
                             this.fire('share', nonce);
                         }
                         if (this._miningEnabled && this._nonce < MAX_NONCE) {
                             next();
                         }
-                    }, startNonce, shareCompact);
-                };
+                    }, startNonce, this._shareCompact);
+                }
 
-                w.setup(this._getInitialSeed(blockHeader), shareCompact);
+                w.setup(this._getInitialSeed(blockHeader));
                 next();
-            };
-        });
-        this._gpuInfo = workers.map(w => {
-            return {
-                idx: w.deviceIndex,
-                name: w.deviceName,
-                vendor: w.deviceVendor,
-                driver: w.driverVersion,
-                computeUnits: w.maxComputeUnits,
-                clockFrequency: w.maxClockFrequency,
-                memSize: w.globalMemSize,
-                type: 'GPU'
             };
         });
     }
@@ -92,51 +81,50 @@ class DumbGpuMiner extends Nimiq.Observable {
         blockHeader.copy(seed, 28);
         seed.writeUInt32LE(ARGON2_SALT.length, 174);
         seed.write(ARGON2_SALT, 178, 'ascii');
-        seed.writeUInt32LE(0, 189);
-        seed.writeUInt32LE(0, 193);
-        // zero padding 59 bytes
         return seed;
     }
 
     _reportHashRate() {
-        this._lastHashRates.forEach((hashRates, idx) => {
-            const hashRate = this._hashes[idx] / HASHRATE_REPORT_INTERVAL;
-            hashRates.push(hashRate);
-            if (hashRates.length > HASHRATE_MOVING_AVERAGE) {
-                hashRates.shift();
+        const averageHashRates = [];
+        this._hashes.forEach((hashes, idx) => {
+            const hashRate = hashes / HASHRATE_REPORT_INTERVAL;
+            this._lastHashRates[idx] = this._lastHashRates[idx] || [];
+            this._lastHashRates[idx].push(hashRate);
+            if (this._lastHashRates[idx].length > HASHRATE_MOVING_AVERAGE) {
+                this._lastHashRates[idx].shift();
             }
+            averageHashRates[idx] = this._lastHashRates[idx].reduce((sum, val) => sum + val, 0) / this._lastHashRates[idx].length;
         });
-        this._hashes.fill(0);
-        const averageHashRates = this._lastHashRates.map(hashRates => hashRates.reduce((sum, val) => sum + val, 0) / hashRates.length);
-        this.fire('hashrate', averageHashRates);
+        this._hashes = [];
+        this.fire('hashrate-changed', averageHashRates);
     }
 
-    mine(blockHeader, shareCompact, resetNonce = true) {
-        this._workId++;
-        if (resetNonce) {
-            this._nonce = 0;
-        }
-        this._miningEnabled = true;
+    setShareCompact(shareCompact) {
+        this._shareCompact = shareCompact;
+    }
 
+    startMiningOnBlock(blockHeader) {
+        if (!this._shareCompact) {
+            throw 'Share compact is not set';
+        }
+        this._workId++;
+        this._nonce = 0;
+        this._miningEnabled = true;
         if (!this._hashRateTimer) {
             this._hashRateTimer = setInterval(() => this._reportHashRate(), 1000 * HASHRATE_REPORT_INTERVAL);
         }
-
-        //console.log(`Started miner on block #${blockHeader.readUInt32BE(134)}, work id #${this._workId}`);
-        this._workers.forEach(worker => worker(blockHeader, shareCompact));
+        this._workers.forEach(worker => worker(blockHeader));
     }
 
     stop() {
         this._miningEnabled = false;
         if (this._hashRateTimer) {
+            this._hashes = [];
+            this._lastHashRates = [];
             clearInterval(this._hashRateTimer);
             delete this._hashRateTimer;
         }
     }
-
-    get gpuInfo() {
-        return this._gpuInfo;
-    }
 }
 
-module.exports = DumbGpuMiner;
+module.exports = Miner;

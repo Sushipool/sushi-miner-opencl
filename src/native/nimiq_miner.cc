@@ -264,4 +264,4 @@ private:
   miner_t miner;
 };
 
-NODE_MODULE(nimiq_miner, Miner::Init);
+NODE_MODULE(nimiq_miner_opencl, Miner::Init);

@@ -1,6 +1,6 @@
 {
   'targets': [{
-    'target_name': 'nimiq_miner',
+    'target_name': 'nimiq_miner_opencl',
     'sources': [
       'src/native/miner.c',
       'src/native/nimiq_miner.cc'

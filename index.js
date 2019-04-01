@@ -4,7 +4,6 @@ const Nimiq = require('@nimiq/core');
 const Utils = require('./src/Utils');
 const NanoPoolMiner = require('./src/NanoPoolMiner');
 const SushiPoolMiner = require('./src/SushiPoolMiner');
-const crypto = require('crypto');
 const Log = Nimiq.Log;
 
 const TAG = 'Nimiq OpenCL Miner';
@@ -32,7 +31,7 @@ if (!config) {
     Log.i(TAG, `- device name      = ${deviceName}`);
 
     // if not specified in the config file, defaults to dumb to make LTD happy :)
-    let consensusType = config.consensus || 'dumb'; 
+    let consensusType = config.consensus || 'dumb';
     if (consensusType === 'dumb' && !config.host.toLowerCase().includes('sushipool')) {
         Log.w(TAG, 'Dumb mode can only be used with SushiPool. Switching to nano.');
         consensusType = 'nano';
@@ -43,12 +42,17 @@ if (!config) {
         'nano': setupNanoPoolMiner
     }
     const createMiner = setup[consensusType];
-    createMiner(address, config, deviceData);    
+    createMiner(address, config, deviceData);
 
 })().catch(e => {
     console.error(e);
     process.exit(1);
 });
+
+function reportHashrates(hashrates) {
+    const totalHashRate = hashrates.reduce((a, b) => a + b, 0);
+    Log.i(TAG, `Hashrate: ${Utils.humanHashrate(totalHashRate)} | ${hashrates.map((hr, idx) => `GPU${idx}: ${Utils.humanHashrate(hr)}`).filter(hr => hr).join(' | ')}`);
+}
 
 async function setupNanoPoolMiner(addr, config, deviceData) {
     Log.i(TAG, `Setting up NanoPoolMiner`);
@@ -69,10 +73,7 @@ async function setupNanoPoolMiner(addr, config, deviceData) {
     $.miner.on('share', (block, blockValid) => {
         Log.i(TAG, `Found share. Nonce: ${block.header.nonce}`);
     });
-    $.miner.on('hashrates-changed', hashrates => {
-        const totalHashRate = hashrates.reduce((a, b) => a + b, 0);
-        Log.i(TAG, `Hashrate: ${Utils.humanHashrate(totalHashRate)} | ${hashrates.map((hr, idx) => `GPU${idx}: ${Utils.humanHashrate(hr)}`).filter(hr => hr).join(' | ')}`);
-    });
+    $.miner.on('hashrate-changed', reportHashrates);
 
     $.consensus.on('established', () => {
         Log.i(TAG, `Connecting to ${config.host}`);
@@ -102,47 +103,10 @@ async function setupNanoPoolMiner(addr, config, deviceData) {
 async function setupSushiPoolMiner(address, config, deviceData) {
     Log.i(TAG, `Setting up SushiPoolMiner`);
 
-    const poolMining = {
-        host: config.host,
-        port: config.port
-    }
-    $.miner = new SushiPoolMiner(poolMining, address, deviceData.deviceName, deviceData, 
-        config.devices, config.memory, config.threads);
-
-    $.miner.on('connected', () => {
-        Log.i(TAG,'Connected to pool');
+    $.miner = new SushiPoolMiner(address, deviceData, config.devices, config.memory, config.threads);
+    $.miner.on('share', nonce => {
+        Log.i(TAG, `Found share. Nonce: ${nonce}`);
     });
-
-    $.miner.on('balance', (balance, confirmedBalance) => {
-        Log.i(TAG,`Balance: ${balance}, confirmed balance: ${confirmedBalance}`);
-    });
-
-    $.miner.on('settings', (address, extraData, targetCompact) => {
-        const difficulty = Nimiq.BlockUtils.compactToDifficulty(targetCompact);
-        Nimiq.Log.i(SushiPoolMiner, `Set share difficulty: ${difficulty.toFixed(2)} (${targetCompact.toString(16)})`);
-        $.miner.currentTargetCompact = targetCompact;
-        $.miner.mineBlock(false);
-    });
-
-    $.miner.on('new-block', (blockHeader) => {
-        const height = blockHeader.readUInt32BE(134);
-        const hex = blockHeader.toString('hex');
-        Log.i(TAG,`New block #${height}: ${hex}`);
-
-        // Workaround duplicated blocks
-        if ($.miner.currentBlockHeader != undefined
-            && $.miner.currentBlockHeader.equals(blockHeader)) {
-            Log.w(TAG,'The same block arrived once again!');
-            return;
-        }
-
-        $.miner.currentBlockHeader = blockHeader;
-        $.miner.mineBlock(true);
-    });
-    $.miner.on('disconnected', () => {
-        $.miner._miner.stop();
-    });
-    $.miner.on('error', (reason) => {
-        Log.w(TAG,`Pool error: ${reason}`);
-    });
+    $.miner.on('hashrate-changed', reportHashrates);
+    $.miner.connect(config.host, config.port);
 }
