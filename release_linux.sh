@@ -23,7 +23,7 @@ mkdir dist
 pkg -t node10-linux index.js
 mv index dist/sushipool-opencl-miner
 
-cp build/Release/nimiq_miner.node dist/
+cp build/Release/nimiq_miner_opencl.node dist/
 cp node_modules/node-lmdb/build/Release/node-lmdb.node dist/
 cp node_modules/cpuid-git/build/Release/cpuid.node dist/
 cp node_modules/@nimiq/core/build/Release/*.node dist/
