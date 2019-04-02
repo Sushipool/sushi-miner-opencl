@@ -33,7 +33,7 @@ if (!config) {
     // if not specified in the config file, defaults to dumb to make LTD happy :)
     let consensusType = config.consensus || 'dumb';
     if (consensusType === 'dumb' && !config.host.toLowerCase().includes('sushipool')) {
-        Log.w(TAG, 'Dumb mode can only be used with SushiPool. Switching to nano.');
+        Log.i(TAG, 'Dumb mode can only be used with SushiPool. Switching to nano.');
         consensusType = 'nano';
     }
 
