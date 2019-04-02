@@ -32,7 +32,7 @@ PACKAGE_VERSION=$(cat package.json \
   | awk -F: '{ print $2 }' \
   | sed 's/[",]//g')
 PACKAGE_VERSION_NO_WHITESPACE="$(echo -e "${PACKAGE_VERSION}" | tr -d '[:space:]')"
-OUTFILE="sushipool-opencl-miner-windows-${PACKAGE_VERSION_NO_WHITESPACE}.zip"
+OUTFILE="sushi-miner-opencl-windows-${PACKAGE_VERSION_NO_WHITESPACE}.zip"
 echo "Building ${OUTFILE}"
 
 rm -rf node_modules
@@ -40,8 +40,8 @@ yarn
 npm link @nimiq/core
 rm -rf dist
 mkdir dist
-pkg -t node10-windows index.js
-mv index.exe dist/sushipool-opencl-miner.exe
+pkg -t node10-windows -o sushi-miner-opencl.exe index.js
+mv sushi-miner-opencl.exe dist/sushi-miner-opencl.exe
 
 cp build/Release/nimiq_miner_opencl.node dist/
 cp node_modules/leveldown/build/Release/leveldown.node dist/

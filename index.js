@@ -6,7 +6,7 @@ const NanoPoolMiner = require('./src/NanoPoolMiner');
 const SushiPoolMiner = require('./src/SushiPoolMiner');
 const Log = Nimiq.Log;
 
-const TAG = 'Nimiq OpenCL Miner';
+const TAG = 'SushiMiner';
 const $ = {};
 
 Log.instance.level = 'info';
