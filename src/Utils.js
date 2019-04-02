@@ -1,5 +1,6 @@
 const fs = require('fs');
 const JSON5 = require('json5');
+const Nimiq = require('@nimiq/core');
 
 exports.humanHashrate = function(hashes) {
     let thresh = 1000;
@@ -21,7 +22,7 @@ exports.readConfigFile = function(fileName) {
         // TODO: Validate
         return config;
     } catch (e) {
-        Log.e(`Failed to read config file ${fileName}: ${e.message}`);
+        Nimiq.Log.e(`Failed to read config file ${fileName}: ${e.message}`);
         return false;
     }
 }
