@@ -17,10 +17,7 @@ get_cards_hashes(){
 }
 
 get_miner_uptime(){
-        local start=$(cat $LOG_NAME | grep "SushiMiner" | head -n 1 | awk {'print $1,$2'} | sed 's/[][]//g' | sed -r 's/^.{2}//')
-        local unix_start=$(date +%s -d "$start")
-        local unix_now=$(date +%s)
-        echo $((unix_now - unix_start))
+        ps -o etimes= -C $CUSTOM_NAME | awk '{print $1}'
 }
 
 get_log_time_diff(){
