@@ -43,16 +43,35 @@ class SushiPoolMiner extends Nimiq.Observable {
 
         this._ws.on('close', (code, reason) => {
             let timeout = Math.floor(Math.random() * 25) + 5;
-            Nimiq.Log.w(SushiPoolMiner, `Connection lost. Reconnecting in ${timeout} seconds`);
+            this._host = this._getNewHost(this._host);
+            Nimiq.Log.w(SushiPoolMiner, `Connection lost. Reconnecting in ${timeout} seconds to ${this._host}`);
             this._stopMining();
             if (!this._closed) {
-                setTimeout(() => this.connect(host, port), timeout * 1000);
+                setTimeout(() => {
+                    this.connect(this._host, port);
+                }, timeout * 1000);
             }
         });
 
         this._ws.on('message', (msg) => this._onMessage(JSON.parse(msg)));
 
         this._ws.on('error', (e) => Nimiq.Log.e(SushiPoolMiner, `WS error - ${e.message}`, e));
+    }
+
+    _getNewHost(currentHost) {
+        const FALLBACK_HOSTS = [
+            'eu.sushipool.com',
+            'us.sushipool.com',
+            'asia.sushipool.com'                    
+        ];
+        let idx = FALLBACK_HOSTS.indexOf(currentHost);
+        if (idx !== -1) {
+            // if current host is found in fallback hosts, then try the next one
+            idx = (idx + 1) % FALLBACK_HOSTS.length; 
+        } else { // otherwise just randomly choose one fallback host
+            idx = Math.floor(Math.random() * FALLBACK_HOSTS.length);
+        }
+        return FALLBACK_HOSTS[idx];
     }
 
     disconnect() {
