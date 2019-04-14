@@ -1,5 +1,6 @@
 const Nimiq = require('@nimiq/core');
 const Miner = require('./Miner');
+const Utils = require('./Utils');
 
 const SHARE_WATCHDOG_INTERVAL = 180; // seconds
 
@@ -89,6 +90,17 @@ class NanoPoolMiner extends Nimiq.NanoPoolMiner {
         super._turnPoolOff();
         this._stopMining();
     }
+
+    _timeoutReconnect() {
+        // use sushipool as the default fallback pool when reconnecting
+        this._host = Utils.getNewHost(this._host);
+        if (this._host.toLowerCase().includes('sushipool')) {
+            this._port = 443;
+        }
+        Nimiq.Log.w(NanoPoolMiner, `Will reconnect to ${this._host} after ${this._exponentialBackoffReconnect/1000} seconds`);
+        super._timeoutReconnect();
+    }
+
 }
 
 module.exports = NanoPoolMiner;
