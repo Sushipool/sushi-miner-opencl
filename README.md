@@ -69,6 +69,6 @@ Website: https://sushipool.com
 
 Discord: https://discord.gg/JCCExJu
 
-Telegram: https://t.me/SushiPool
+Telegram: https://t.me/SushiPoolHelp
 
 Releases: https://github.com/Sushipool/nimiq-opencl-miner/releases
