@@ -1,5 +1,5 @@
 # Nimiq OpenCL GPU Mining Client for AMD and Nvidia Cards
-[![Github All Releases](https://img.shields.io/github/downloads/Sushipool/nimiq-opencl-miner/total.svg)]()
+[![Github All Releases](https://img.shields.io/github/downloads/Sushipool/sushi-miner-opencl/total.svg)]()
 
 High-performance Nimiq GPU mining client that provides a fully open source codebase, optimized hash rate, nano protocol, multi GPU support, and a **0%** Dev fee.
 ## Quickstart (Ubuntu/Debian)
@@ -8,15 +8,15 @@ High-performance Nimiq GPU mining client that provides a fully open source codeb
 2. Install `git` and `build-essential`: `sudo apt-get install -y git build-essential`.
 3. Install `opencl-headers`: `sudo apt-get install opencl-headers`.
 4. Install OpenCL-capable drivers for your GPU ([Nvidia](https://www.nvidia.com/Download/index.aspx) or [AMD](https://www.amd.com/en/support))
-5. Clone this repository: `git clone https://github.com/Sushipool/nimiq-opencl-miner`.
-6. Build the project: `cd nimiq-opencl-miner && npm install`.
+5. Clone this repository: `git clone https://github.com/Sushipool/sushi-miner-opencl`.
+6. Build the project: `cd sushi-miner-opencl && npm install`.
 7. Copy miner.sample.conf to miner.conf: `cp miner.sample.conf miner.conf`.
 8. Edit miner.conf, specify your wallet address.
 9. Run the miner `UV_THREADPOOL_SIZE=8 nodejs index.js`. Ensure UV_THREADPOOL_SIZE is higher than a number of GPU in your system.
 
 ## HiveOS Mining FlightSheet
 Use the following FlightSheet settings to start mining Nimiq with HiveOS.
-![HiveOS](https://github.com/Sushipool/nimiq-opencl-miner/blob/master/hiveos-flightsheet.png?raw=true)
+![HiveOS](https://github.com/Sushipool/sushi-miner-opencl/blob/master/hiveos-flightsheet.png?raw=true)
 
 
 ## Developer Fee
