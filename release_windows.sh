@@ -49,7 +49,9 @@ cp node_modules/cpuid-git/build/Release/cpuid.node dist/
 cp node_modules/@nimiq/core/build/Release/*.node dist/
 cp dist/nimiq_node_compat.node dist/nimiq_node_sse2.node
 rm dist/nimiq_node_native.node
-cp miner.sample.conf dist
+cp miner.sample.conf dist/miner.conf
+cp README.md dist
+cp hiveos-flightsheet.png dist
 cp start_gpu.bat dist
 
 echo "Create zipped"
