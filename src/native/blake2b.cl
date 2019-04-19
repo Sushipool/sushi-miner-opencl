@@ -114,11 +114,8 @@ void blake2b_compress(ulong *h, ulong *m, uint bytes_compressed, bool last_block
 void set_nonce(ulong *inseed, uint nonce)
 {
   // bytes 170-173
-  ulong n = ((nonce & 0xFF000000) >> 24)
-    | ((nonce & 0x00FF0000) >> 8)
-    | ((nonce & 0x0000FF00) << 8)
-    | ((nonce & 0x000000FF) << 24);
-  inseed[21] = (inseed[21] & 0xFFFF00000000FFFFUL) | (n << 16);
+  ulong n = as_uint(as_uchar4(nonce).s3210);
+  inseed[21] = inseed[21] | (n << 16);
 }
 
 void initial_hash(ulong *hash, global ulong *inseed, uint nonce)

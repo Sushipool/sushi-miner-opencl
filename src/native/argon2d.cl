@@ -32,21 +32,9 @@ SOFTWARE.
 
 #define THREADS_PER_LANE 32
 
-
-inline ulong u64_build(uint hi, uint lo)
-{
-    return upsample(hi, lo);
-}
-
-inline uint u64_lo(ulong x)
-{
-    return (uint)x;
-}
-
-inline uint u64_hi(ulong x)
-{
-    return (uint)(x >> 32);
-}
+#define u64_build(hi, lo)   (as_ulong((uint2)((lo), (hi))))
+#define u64_lo(x)   (as_uint2(x).s0)
+#define u64_hi(x)   (as_uint2(x).s1)
 
 struct block_g
 {
