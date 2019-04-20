@@ -42,6 +42,18 @@ class NanoPoolMiner extends Nimiq.NanoPoolMiner {
         }
     }
 
+    _register() {
+        this._send({
+            message: 'register',
+            mode: this.mode,
+            address: this._ourAddress.toUserFriendlyAddress(),
+            deviceId: this._deviceId,
+            deviceName: this._deviceData.deviceName,
+            deviceData: this._deviceData,
+            genesisHash: Nimiq.BufferUtils.toBase64(Nimiq.GenesisConfig.GENESIS_HASH.serialize())
+        });
+    }
+
     _onNewPoolSettings(address, extraData, shareCompact, nonce) {
         super._onNewPoolSettings(address, extraData, shareCompact, nonce);
         if (Nimiq.BlockUtils.isValidCompact(shareCompact)) {
