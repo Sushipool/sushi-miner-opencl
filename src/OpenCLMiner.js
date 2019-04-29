@@ -16,18 +16,27 @@ const ARGON2_TYPE = 0; // Argon2D
 const ARGON2_SALT = 'nimiqrocks!';
 const ARGON2_HASH_LENGTH = 32;
 
-class Miner extends Nimiq.Observable {
+class OpenCLMiner extends Nimiq.Observable {
 
-    constructor(allowedDevices, memorySizes, threads) {
+    constructor(deviceOptions) {
         super();
 
         this._miningEnabled = false;
         this._nonce = 0;
         this._workId = 0;
 
-        allowedDevices = Array.isArray(allowedDevices) ? allowedDevices : [];
-        memorySizes = Array.isArray(memorySizes) ? memorySizes : [];
-        threads = Array.isArray(threads) ? threads : [];
+        const allowedDevices = [];
+        const memorySizes = [];
+        const threads = [];
+        const devices = deviceOptions.devices(); // TODO: hack
+        for (let idx = 0; idx < devices.length; idx++) {
+            const options = deviceOptions.forDevice(devices[idx]);
+            if (options.enabled) {
+                allowedDevices.push(idx);
+                memorySizes.push(options.memory);
+                threads.push(options.threads);
+            }
+        }
 
         const miner = new NativeMiner.Miner(allowedDevices, memorySizes, threads);
         const workers = miner.getWorkers();
@@ -113,7 +122,7 @@ class Miner extends Nimiq.Observable {
         if (!this._hashRateTimer) {
             this._hashRateTimer = setInterval(() => this._reportHashRate(), 1000 * HASHRATE_REPORT_INTERVAL);
         }
-        this._workers.forEach(worker => worker(blockHeader));
+        this._workers.forEach(worker => worker(Buffer.from(blockHeader)));
     }
 
     stop() {
@@ -127,4 +136,4 @@ class Miner extends Nimiq.Observable {
     }
 }
 
-module.exports = Miner;
+module.exports = OpenCLMiner;

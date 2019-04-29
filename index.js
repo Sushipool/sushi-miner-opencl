@@ -22,8 +22,10 @@ if (!config) {
     const hashrate = (config.hashrate > 0) ? config.hashrate : 100; // 100 kH/s by default
     const desiredSps = 5;
     const startDifficulty = (1e3 * hashrate * desiredSps) / (1 << 16);
-    const minerVersion = 'OpenCL Miner ' + pjson.version;
+    const api = config.api || 'OpenCL'; // defaults to OpenCL if not specified
+    const minerVersion = `${api} Miner ` + pjson.version;
     const deviceData = { deviceName, startDifficulty, minerVersion };
+    const deviceOptions = Utils.getDeviceOptions(config);
 
     Log.i(TAG, `Nimiq ${minerVersion} starting`);
     Log.i(TAG, `- pool server      = ${config.host}:${config.port}`);
@@ -40,9 +42,9 @@ if (!config) {
     const setup = { // can add other miner types here
         'dumb': setupSushiPoolMiner,
         'nano': setupNanoPoolMiner
-    }
+    };
     const createMiner = setup[consensusType];
-    createMiner(address, config, deviceData);
+    await createMiner(address, config, deviceData, deviceOptions);
 
 })().catch(e => {
     console.error(e);
@@ -54,7 +56,7 @@ function reportHashrates(hashrates) {
     Log.i(TAG, `Hashrate: ${Utils.humanHashrate(totalHashRate)} | ${hashrates.map((hr, idx) => `GPU${idx}: ${Utils.humanHashrate(hr)}`).filter(hr => hr).join(' | ')}`);
 }
 
-async function setupNanoPoolMiner(addr, config, deviceData) {
+async function setupNanoPoolMiner(addr, config, deviceData, deviceOptions) {
     Log.i(TAG, `Setting up NanoPoolMiner`);
 
     Nimiq.GenesisConfig.main();
@@ -67,9 +69,7 @@ async function setupNanoPoolMiner(addr, config, deviceData) {
     Log.i(TAG, `- device id        = ${deviceId}`);
 
     const address = Nimiq.Address.fromUserFriendlyAddress(addr);
-    $.miner = new NanoPoolMiner($.blockchain, $.network.time, address, deviceId, deviceData,
-        config.devices, config.memory, config.threads);
-
+    $.miner = new NanoPoolMiner($.blockchain, $.network.time, address, deviceId, deviceData, deviceOptions);
     $.miner.on('share', (block, blockValid) => {
         Log.i(TAG, `Found share. Nonce: ${block.header.nonce}`);
     });
@@ -100,10 +100,10 @@ async function setupNanoPoolMiner(addr, config, deviceData) {
     $.network.connect();
 }
 
-async function setupSushiPoolMiner(address, config, deviceData) {
+async function setupSushiPoolMiner(address, config, deviceData, deviceOptions) {
     Log.i(TAG, `Setting up SushiPoolMiner`);
 
-    $.miner = new SushiPoolMiner(address, deviceData, config.devices, config.memory, config.threads);
+    $.miner = new SushiPoolMiner(address, deviceData, deviceOptions);
     $.miner.on('share', nonce => {
         Log.i(TAG, `Found share. Nonce: ${nonce}`);
     });
