@@ -1,7 +1,6 @@
 const os = require('os');
 const crypto = require('crypto');
 const Nimiq = require('@nimiq/core');
-const Miner = require('./Miner');
 const WebSocket = require('ws');
 const Utils = require('./Utils');
 
@@ -9,14 +8,13 @@ const GENESIS_HASH_MAINNET = 'Jkqvik+YKKdsVQY12geOtGYwahifzANxC+6fZJyGnRI=';
 
 class SushiPoolMiner extends Nimiq.Observable {
 
-    constructor(address, deviceData, allowedDevices, memorySizes, threads) {
+    constructor(address, deviceData, deviceOptions) {
         super();
 
         this._address = address;
         this._deviceId = this._getDeviceId();
         this._deviceData = deviceData;
-
-        this._miner = new Miner(allowedDevices, memorySizes, threads);
+        this._miner = Utils.getNativeMiner(deviceOptions);
         this._miner.on('share', nonce => {
             this._submitShare(nonce);
         });
@@ -92,7 +90,7 @@ class SushiPoolMiner extends Nimiq.Observable {
                 this._onBalance(msg.balance, msg.confirmedBalance);
                 break;
             case 'new-block':
-                this._onNewBlock(Buffer.from(msg.blockHeader, 'base64'));
+                this._onNewBlock(Nimiq.BlockHeader.unserialize(Nimiq.BufferUtils.fromBase64(msg.blockHeader)));
                 break;
             case 'error':
                 Nimiq.Log.w(SushiPoolMiner, `Pool error: ${msg.reason}`);
@@ -101,9 +99,8 @@ class SushiPoolMiner extends Nimiq.Observable {
     }
 
     _startMining() {
-        const height = this._currentBlockHeader.readUInt32BE(134);
-        Nimiq.Log.i(SushiPoolMiner, `Starting work on block #${height}`);
-        this._miner.startMiningOnBlock(this._currentBlockHeader);
+        Nimiq.Log.i(SushiPoolMiner, `Starting work on block #${this._currentBlockHeader.height}`);
+        this._miner.startMiningOnBlock(this._currentBlockHeader.serialize());
     }
 
     _stopMining() {
