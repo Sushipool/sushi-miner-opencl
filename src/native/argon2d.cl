@@ -70,7 +70,7 @@ void xor_block(struct block_th *dst, const struct block_th *src)
     dst->d ^= src->d;
 }
 
-void load_block(struct block_th *dst, __global const struct block_g *src, uint thread)
+void load_block_global(struct block_th *dst, __global const struct block_g *src, uint thread)
 {
     dst->a = src->data[0 * THREADS_PER_LANE + thread];
     dst->b = src->data[1 * THREADS_PER_LANE + thread];
@@ -78,8 +78,7 @@ void load_block(struct block_th *dst, __global const struct block_g *src, uint t
     dst->d = src->data[3 * THREADS_PER_LANE + thread];
 }
 
-__attribute__((overloadable))
-void load_block_xor(struct block_th *dst, __global const struct block_g *src, uint thread)
+void load_block_xor_global(struct block_th *dst, __global const struct block_g *src, uint thread)
 {
     dst->a ^= src->data[0 * THREADS_PER_LANE + thread];
     dst->b ^= src->data[1 * THREADS_PER_LANE + thread];
@@ -87,8 +86,7 @@ void load_block_xor(struct block_th *dst, __global const struct block_g *src, ui
     dst->d ^= src->data[3 * THREADS_PER_LANE + thread];
 }
 
-__attribute__((overloadable))
-void load_block_xor(struct block_th *dst, __local const struct block_g *src, uint thread)
+void load_block_xor_local(struct block_th *dst, __local const struct block_g *src, uint thread)
 {
     dst->a ^= src->data[0 * THREADS_PER_LANE + thread];
     dst->b ^= src->data[1 * THREADS_PER_LANE + thread];
@@ -96,8 +94,7 @@ void load_block_xor(struct block_th *dst, __local const struct block_g *src, uin
     dst->d ^= src->data[3 * THREADS_PER_LANE + thread];
 }
 
-__attribute__((overloadable))
-void store_block(__global struct block_g *dst, const struct block_th *src, uint thread)
+void store_block_global(__global struct block_g *dst, const struct block_th *src, uint thread)
 {
     dst->data[0 * THREADS_PER_LANE + thread] = src->a;
     dst->data[1 * THREADS_PER_LANE + thread] = src->b;
@@ -105,8 +102,7 @@ void store_block(__global struct block_g *dst, const struct block_th *src, uint 
     dst->data[3 * THREADS_PER_LANE + thread] = src->d;
 }
 
-__attribute__((overloadable))
-void store_block(__local struct block_g *dst, const struct block_th *src, uint thread)
+void store_block_local(__local struct block_g *dst, const struct block_th *src, uint thread)
 {
     dst->data[0 * THREADS_PER_LANE + thread] = src->a;
     dst->data[1 * THREADS_PER_LANE + thread] = src->b;
@@ -194,15 +190,15 @@ void argon2_core(__global struct block_g *memory,
     bool cached = (ref_index + CACHE_SIZE + 1 >= curr_index);
     if (cached)
     {
-        load_block_xor(prev, cache + ref_index % CACHE_SIZE, thread);
+        load_block_xor_local(prev, cache + ref_index % CACHE_SIZE, thread);
     }
     else
     {
-        load_block_xor(prev, memory + ref_index * nonces_per_run, thread);
+        load_block_xor_global(prev, memory + ref_index * nonces_per_run, thread);
     }
 
     // Transpose 1
-    store_block(buf, prev, thread);
+    store_block_local(buf, prev, thread);
     barrier(CLK_LOCAL_MEM_FENCE);
     block.a = buf->data[IDX_A(1)];
     block.b = buf->data[IDX_B(1)];
@@ -252,13 +248,13 @@ void argon2_core(__global struct block_g *memory,
     buf->data[IDX_C(4)] = block.c;
     buf->data[IDX_D(4)] = block.d;
     barrier(CLK_LOCAL_MEM_FENCE);
-    load_block_xor(prev, buf, thread);
+    load_block_xor_local(prev, buf, thread);
 
     // Store to memory (don't store last cached blocks)
     bool stored = (curr_index < MEMORY_COST - CACHE_SIZE - 2) || (curr_index == MEMORY_COST - 1);
     if (stored)
     {
-        store_block(memory + curr_index * nonces_per_run, prev, thread);
+        store_block_global(memory + curr_index * nonces_per_run, prev, thread);
     }
 }
 
@@ -282,12 +278,12 @@ void argon2(__local struct block_g *buf, __local struct block_g *cache, __global
     memory += job_id;
 
     struct block_th tmp, prev;
-    load_block(&tmp, memory, thread);
-    load_block(&prev, memory + nonces_per_run, thread);
+    load_block_global(&tmp, memory, thread);
+    load_block_global(&prev, memory + nonces_per_run, thread);
 
     for (uint curr_index = 2; curr_index < MEMORY_COST; curr_index++)
     {
-        store_block(cache + (curr_index - 2) % CACHE_SIZE, &tmp, thread);
+        store_block_local(cache + (curr_index - 2) % CACHE_SIZE, &tmp, thread);
         move_block(&tmp, &prev);
 
         argon2_core(memory, curr_index, nonces_per_run, &prev, buf, cache, thread);
