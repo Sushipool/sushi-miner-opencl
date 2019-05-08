@@ -118,6 +118,7 @@ class Miner extends Nimiq.Observable {
 
     stop() {
         this._miningEnabled = false;
+        this._miner.close();        
         if (this._hashRateTimer) {
             this._hashes = [];
             this._lastHashRates = [];
