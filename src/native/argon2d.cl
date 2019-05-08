@@ -57,6 +57,19 @@ struct block_th
 #define IDX_C(r) (IDX_X(r, 2))
 #define IDX_D(r) (IDX_X(r, 3))
 
+void move_block(struct block_th *dst, const struct block_th *src)
+{
+    *dst = *src;
+}
+
+void xor_block(struct block_th *dst, const struct block_th *src)
+{
+    dst->a ^= src->a;
+    dst->b ^= src->b;
+    dst->c ^= src->c;
+    dst->d ^= src->d;
+}
+
 void load_block(struct block_th *dst, __global const struct block_g *src, uint thread)
 {
     dst->a = src->data[0 * THREADS_PER_LANE + thread];
@@ -170,28 +183,23 @@ uint get_ref_pos(struct block_th *prev, __local struct block_g *buf, uint curr_i
 }
 
 void argon2_core(__global struct block_g *memory,
-                 uint curr_index, uint ref_index, uint nonces_per_run,
-                 struct block_th *prev, __local struct block_g *buf, uint thread
-#ifdef LDS_CACHE_SIZE
-                 , __local struct block_g *cache
-#endif
-                 )
+                 uint curr_index, uint nonces_per_run, struct block_th *prev,
+                 __local struct block_g *buf, __local struct block_g *cache, uint thread)
 {
     struct block_th block;
 
+    uint ref_index = get_ref_pos(prev, buf, curr_index, thread);
+
     // Load from memory + XOR
-#ifdef LDS_CACHE_SIZE
-    if (ref_index < LDS_CACHE_SIZE)
+    bool cached = (ref_index + CACHE_SIZE + 1 >= curr_index);
+    if (cached)
     {
-        load_block_xor(prev, &cache[ref_index], thread);
+        load_block_xor(prev, cache + ref_index % CACHE_SIZE, thread);
     }
-    else {
-#endif
-        __global struct block_g * mem_ref = memory + ref_index * nonces_per_run;
-        load_block_xor(prev, mem_ref, thread);
-#ifdef LDS_CACHE_SIZE
+    else
+    {
+        load_block_xor(prev, memory + ref_index * nonces_per_run, thread);
     }
-#endif
 
     // Transpose 1
     store_block(buf, prev, thread);
@@ -246,19 +254,12 @@ void argon2_core(__global struct block_g *memory,
     barrier(CLK_LOCAL_MEM_FENCE);
     load_block_xor(prev, buf, thread);
 
-    // Store to memory
-#ifdef LDS_CACHE_SIZE
-    if (curr_index < LDS_CACHE_SIZE)
+    // Store to memory (don't store last cached blocks)
+    bool stored = (curr_index < MEMORY_COST - CACHE_SIZE - 2) || (curr_index == MEMORY_COST - 1);
+    if (stored)
     {
-        store_block(&cache[curr_index], prev, thread);
+        store_block(memory + curr_index * nonces_per_run, prev, thread);
     }
-    else {
-#endif
-        __global struct block_g *mem_curr = memory + curr_index * nonces_per_run;
-        store_block(mem_curr, prev, thread);
-#ifdef LDS_CACHE_SIZE
-    }
-#endif
 }
 
 __kernel
@@ -267,38 +268,28 @@ __attribute__((reqd_work_group_size(32, 2, 1)))
 #else
 __attribute__((reqd_work_group_size(32, 1, 1)))
 #endif
-void argon2(__local struct block_g *lds, __global struct block_g *memory)
+void argon2(__local struct block_g *buf, __local struct block_g *cache, __global struct block_g *memory)
 {
     uint job_id = get_global_id(1);
     uint warp   = get_local_id(1);
-    uint jobs_per_block  = get_local_size(1);
     uint thread = get_local_id(0);
     uint nonces_per_run = get_global_size(1);
 
-    __local struct block_g *buf = &lds[warp];
-#ifdef LDS_CACHE_SIZE
-    __local struct block_g *cache = &lds[jobs_per_block + LDS_CACHE_SIZE * warp];
-#endif
+    buf += warp;
+    cache += warp * CACHE_SIZE;
 
     /* select job's memory region: */
     memory += job_id;
 
-    struct block_th first, prev;
+    struct block_th tmp, prev;
+    load_block(&tmp, memory, thread);
     load_block(&prev, memory + nonces_per_run, thread);
-
-#ifdef LDS_CACHE_SIZE
-    load_block(&first, memory, thread);
-    store_block(&cache[0], &first, thread);
-    store_block(&cache[1], &prev, thread);
-#endif
 
     for (uint curr_index = 2; curr_index < MEMORY_COST; curr_index++)
     {
-        uint ref_index = get_ref_pos(&prev, buf, curr_index, thread);
-        argon2_core(memory, curr_index, ref_index, nonces_per_run, &prev, buf, thread
-#ifdef LDS_CACHE_SIZE
-            , cache
-#endif
-        );
+        store_block(cache + (curr_index - 2) % CACHE_SIZE, &tmp, thread);
+        move_block(&tmp, &prev);
+
+        argon2_core(memory, curr_index, nonces_per_run, &prev, buf, cache, thread);
     }
 }

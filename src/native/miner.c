@@ -169,7 +169,7 @@ cl_int initialize_miner(miner_t *miner,
       }
 
       // How many threads to run
-      cl_uint num_threads = 1;
+      cl_uint num_threads = 2;
       if (threads_len > 0)
       {
         if (threads_len == 1)
@@ -185,8 +185,7 @@ cl_int initialize_miner(miner_t *miner,
 
       const cl_ulong nonces_per_run = (memory_size_mb * ONE_MB) / (ARGON2_BLOCK_SIZE * ARGON2_MEMORY_COST);
       const cl_uint jobs_per_block = (is_amd ? 2 : 1);
-      const cl_uint lds_cache_size = (is_amd ? 3 : 2); // Can't be 1
-      const size_t shmem_size = (1 + lds_cache_size) * jobs_per_block * ARGON2_BLOCK_SIZE;
+      const cl_uint cache_size = (is_amd ? 3 : 2);
 
       printf("  Device #%u: %s by %s:\n"
              "    Driver %s, %s\n"
@@ -206,11 +205,8 @@ cl_int initialize_miner(miner_t *miner,
         strcat(build_options, " -DAMD");
       }
       char opt[30];
-      if (lds_cache_size > 0)
-      {
-        sprintf(opt, " -DLDS_CACHE_SIZE=%u", lds_cache_size);
-        strcat(build_options, opt);
-      }
+      sprintf(opt, " -DCACHE_SIZE=%u", cache_size);
+      strcat(build_options, opt);
 
       cl_program program = CL_CHECK_ERR(clCreateProgramWithSource(context, 2, sources, NULL, &_err));
       cl_int build_result = clBuildProgram(program, 0, NULL, build_options, NULL, NULL);
@@ -273,8 +269,9 @@ cl_int initialize_miner(miner_t *miner,
         CL_CHECK(clSetKernelArg(worker->kernel_init_memory, 1, sizeof(cl_mem), &worker->mem_initial_seed));
 
         worker->kernel_argon2 = CL_CHECK_ERR(clCreateKernel(worker->program, "argon2", &_err));
-        CL_CHECK(clSetKernelArg(worker->kernel_argon2, 0, shmem_size, NULL));
-        CL_CHECK(clSetKernelArg(worker->kernel_argon2, 1, sizeof(cl_mem), &worker->mem_argon2_blocks));
+        CL_CHECK(clSetKernelArg(worker->kernel_argon2, 0, jobs_per_block * ARGON2_BLOCK_SIZE, NULL));
+        CL_CHECK(clSetKernelArg(worker->kernel_argon2, 1, cache_size * jobs_per_block * ARGON2_BLOCK_SIZE, NULL));
+        CL_CHECK(clSetKernelArg(worker->kernel_argon2, 2, sizeof(cl_mem), &worker->mem_argon2_blocks));
 
         worker->kernel_find_nonce = CL_CHECK_ERR(clCreateKernel(worker->program, "get_nonce", &_err));
         CL_CHECK(clSetKernelArg(worker->kernel_find_nonce, 0, sizeof(cl_mem), &worker->mem_argon2_blocks));
