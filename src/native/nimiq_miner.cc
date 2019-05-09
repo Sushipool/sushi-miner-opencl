@@ -47,6 +47,7 @@ private:
 
 class Miner : public Nan::ObjectWrap
 {
+bool closed;
 public:
   static NAN_MODULE_INIT(Init)
   {
@@ -55,17 +56,22 @@ public:
     tpl->InstanceTemplate()->SetInternalFieldCount(1);
 
     Nan::SetPrototypeMethod(tpl, "getWorkers", GetWorkers);
+    Nan::SetPrototypeMethod(tpl, "close", Close);
 
     constructor().Reset(Nan::GetFunction(tpl).ToLocalChecked());
     Nan::Set(target, Nan::New("Miner").ToLocalChecked(), Nan::GetFunction(tpl).ToLocalChecked());
   }
 
 private:
-  explicit Miner(miner_t miner) : miner(miner) {}
+  explicit Miner(miner_t miner) : miner(miner), closed(false) {}
 
   ~Miner()
   {
-    release_miner(&miner);
+    if (!closed)
+    {
+      release_miner(&miner);
+      closed = true;
+    }
   }
 
   static NAN_METHOD(New)
@@ -114,6 +120,16 @@ private:
     Miner *obj = new Miner(m);
     obj->Wrap(info.This());
     info.GetReturnValue().Set(info.This());
+  }
+
+  static NAN_METHOD(Close)
+  {
+    Miner *obj = Nan::ObjectWrap::Unwrap<Miner>(info.This());
+    if (!(obj->closed))
+    {
+      release_miner(&obj->miner);
+      obj->closed = true;
+    }
   }
 
   static NAN_METHOD(GetWorkers)
