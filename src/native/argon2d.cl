@@ -180,13 +180,18 @@ uint get_ref_pos(struct block_th *prev, __local struct block_g *buf, uint curr_i
 
 void argon2_core(__global struct block_g *memory,
                  uint curr_index, uint nonces_per_run, struct block_th *prev,
-                 __local struct block_g *buf, __local struct block_g *cache, uint thread)
+                 __local struct block_g *buf,
+#ifdef CACHE_SIZE
+                 __local struct block_g *cache,
+#endif
+                 uint thread)
 {
     struct block_th block;
 
     uint ref_index = get_ref_pos(prev, buf, curr_index, thread);
 
     // Load from memory + XOR
+#ifdef CACHE_SIZE
     bool cached = (ref_index + CACHE_SIZE + 1 >= curr_index);
     if (cached)
     {
@@ -194,8 +199,11 @@ void argon2_core(__global struct block_g *memory,
     }
     else
     {
+#endif
         load_block_xor_global(prev, memory + ref_index * nonces_per_run, thread);
+#ifdef CACHE_SIZE
     }
+#endif
 
     // Transpose 1
     store_block_local(buf, prev, thread);
@@ -251,11 +259,15 @@ void argon2_core(__global struct block_g *memory,
     load_block_xor_local(prev, buf, thread);
 
     // Store to memory (don't store last cached blocks)
+#ifdef CACHE_SIZE
     bool stored = (curr_index < MEMORY_COST - CACHE_SIZE - 2) || (curr_index == MEMORY_COST - 1);
     if (stored)
     {
+#endif
         store_block_global(memory + curr_index * nonces_per_run, prev, thread);
+#ifdef CACHE_SIZE
     }
+#endif
 }
 
 __kernel
@@ -264,28 +276,41 @@ __attribute__((reqd_work_group_size(32, 2, 1)))
 #else
 __attribute__((reqd_work_group_size(32, 1, 1)))
 #endif
-void argon2(__local struct block_g *buf, __local struct block_g *cache, __global struct block_g *memory)
+void argon2(__local struct block_g *shmem, __global struct block_g *memory)
 {
     uint job_id = get_global_id(1);
     uint warp   = get_local_id(1);
+    uint jobs_per_block  = get_local_size(1);
     uint thread = get_local_id(0);
     uint nonces_per_run = get_global_size(1);
 
-    buf += warp;
-    cache += warp * CACHE_SIZE;
+    __local struct block_g *buf = &shmem[warp];
+#ifdef CACHE_SIZE
+    __local struct block_g *cache = &shmem[jobs_per_block + warp * CACHE_SIZE];
+#endif
 
     /* select job's memory region: */
     memory += job_id;
 
-    struct block_th tmp, prev;
+#ifdef CACHE_SIZE
+    struct block_th tmp;
     load_block_global(&tmp, memory, thread);
+#endif
+
+    struct block_th prev;
     load_block_global(&prev, memory + nonces_per_run, thread);
 
     for (uint curr_index = 2; curr_index < MEMORY_COST; curr_index++)
     {
+#ifdef CACHE_SIZE
         store_block_local(cache + (curr_index - 2) % CACHE_SIZE, &tmp, thread);
         move_block(&tmp, &prev);
+#endif
 
-        argon2_core(memory, curr_index, nonces_per_run, &prev, buf, cache, thread);
+        argon2_core(memory, curr_index, nonces_per_run, &prev, buf,
+#ifdef CACHE_SIZE
+                    cache,
+#endif
+                    thread);
     }
 }

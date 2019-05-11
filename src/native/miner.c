@@ -48,7 +48,8 @@ const cl_uint zero = 0;
 cl_int initialize_miner(miner_t *miner,
                         uint32_t *enabled_devices, uint32_t enabled_devices_len,
                         uint32_t *memory_sizes, uint32_t memory_sizes_len,
-                        uint32_t *threads, uint32_t threads_len)
+                        uint32_t *threads, uint32_t threads_len,
+                        uint32_t *cache_sizes, uint32_t cache_sizes_len)
 {
   cl_int ret;
 #ifdef _WIN32
@@ -183,9 +184,23 @@ cl_int initialize_miner(miner_t *miner,
       }
       num_threads = (num_threads > 8) ? 8 : (num_threads < 1) ? 1 : num_threads; // limit to some reasonable value
 
+      // Cache size
+      cl_uint cache_size = (is_amd ? 3 : 2);
+      if (cache_sizes_len > 0)
+      {
+        if (cache_sizes_len == 1)
+        {
+          cache_size = cache_sizes[0];
+        }
+        else if (enabled_device_idx < cache_sizes_len)
+        {
+          cache_size = cache_sizes[enabled_device_idx];
+        }
+      }
+      cache_size = (cache_size > 10) ? 10 : cache_size; // even 10 is way too much
+
       const cl_ulong nonces_per_run = (memory_size_mb * ONE_MB) / (ARGON2_BLOCK_SIZE * ARGON2_MEMORY_COST);
       const cl_uint jobs_per_block = (is_amd ? 2 : 1);
-      const cl_uint cache_size = (is_amd ? 3 : 2);
 
       printf("  Device #%u: %s by %s:\n"
              "    Driver %s, %s\n"
@@ -205,8 +220,11 @@ cl_int initialize_miner(miner_t *miner,
         strcat(build_options, " -DAMD");
       }
       char opt[30];
-      sprintf(opt, " -DCACHE_SIZE=%u", cache_size);
-      strcat(build_options, opt);
+      if (cache_size > 0)
+      {
+        sprintf(opt, " -DCACHE_SIZE=%u", cache_size);
+        strcat(build_options, opt);
+      }
 
       cl_program program = CL_CHECK_ERR(clCreateProgramWithSource(context, 2, sources, NULL, &_err));
       cl_int build_result = clBuildProgram(program, 0, NULL, build_options, NULL, NULL);
@@ -269,9 +287,8 @@ cl_int initialize_miner(miner_t *miner,
         CL_CHECK(clSetKernelArg(worker->kernel_init_memory, 1, sizeof(cl_mem), &worker->mem_initial_seed));
 
         worker->kernel_argon2 = CL_CHECK_ERR(clCreateKernel(worker->program, "argon2", &_err));
-        CL_CHECK(clSetKernelArg(worker->kernel_argon2, 0, jobs_per_block * ARGON2_BLOCK_SIZE, NULL));
-        CL_CHECK(clSetKernelArg(worker->kernel_argon2, 1, cache_size * jobs_per_block * ARGON2_BLOCK_SIZE, NULL));
-        CL_CHECK(clSetKernelArg(worker->kernel_argon2, 2, sizeof(cl_mem), &worker->mem_argon2_blocks));
+        CL_CHECK(clSetKernelArg(worker->kernel_argon2, 0, (1 + cache_size) * jobs_per_block * ARGON2_BLOCK_SIZE, NULL));
+        CL_CHECK(clSetKernelArg(worker->kernel_argon2, 1, sizeof(cl_mem), &worker->mem_argon2_blocks));
 
         worker->kernel_find_nonce = CL_CHECK_ERR(clCreateKernel(worker->program, "get_nonce", &_err));
         CL_CHECK(clSetKernelArg(worker->kernel_find_nonce, 0, sizeof(cl_mem), &worker->mem_argon2_blocks));
@@ -334,7 +351,7 @@ cl_int release_miner(miner_t *miner)
 cl_int setup_worker(worker_t *worker, void *initial_seed)
 {
   CL_CHECK(clEnqueueWriteBuffer(worker->queue, worker->mem_initial_seed, CL_FALSE, 0, INITIAL_SEED_SIZE, initial_seed, 0, NULL, NULL));
-  CL_CHECK(clEnqueueWriteBuffer(worker->queue, worker->mem_nonce, CL_FALSE, 0, sizeof(cl_uint), &zero, 0, NULL, NULL));
+  CL_CHECK(clEnqueueWriteBuffer(worker->queue, worker->mem_nonce, CL_TRUE, 0, sizeof(cl_uint), &zero, 0, NULL, NULL));
   return CL_SUCCESS;
 }
 
@@ -356,7 +373,7 @@ cl_int mine_nonces(worker_t *worker, cl_uint start_nonce, cl_uint share_compact,
 
   if (*nonce > 0)
   {
-    CL_CHECK(clEnqueueWriteBuffer(worker->queue, worker->mem_nonce, CL_FALSE, 0, sizeof(cl_uint), &zero, 0, NULL, NULL));
+    CL_CHECK(clEnqueueWriteBuffer(worker->queue, worker->mem_nonce, CL_TRUE, 0, sizeof(cl_uint), &zero, 0, NULL, NULL));
   }
 
   return CL_SUCCESS;

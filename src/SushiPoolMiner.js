@@ -9,14 +9,14 @@ const GENESIS_HASH_MAINNET = 'Jkqvik+YKKdsVQY12geOtGYwahifzANxC+6fZJyGnRI=';
 
 class SushiPoolMiner extends Nimiq.Observable {
 
-    constructor(address, deviceData, allowedDevices, memorySizes, threads) {
+    constructor(address, deviceData, allowedDevices, memorySizes, threads, cacheSizes) {
         super();
 
         this._address = address;
         this._deviceId = this._getDeviceId();
         this._deviceData = deviceData;
 
-        this._miner = new Miner(allowedDevices, memorySizes, threads);
+        this._miner = new Miner(allowedDevices, memorySizes, threads, cacheSizes);
         this._miner.on('share', nonce => {
             this._submitShare(nonce);
         });

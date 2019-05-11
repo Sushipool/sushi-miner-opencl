@@ -18,7 +18,7 @@ const ARGON2_HASH_LENGTH = 32;
 
 class Miner extends Nimiq.Observable {
 
-    constructor(allowedDevices, memorySizes, threads) {
+    constructor(allowedDevices, memorySizes, threads, cacheSizes) {
         super();
 
         this._miningEnabled = false;
@@ -28,8 +28,9 @@ class Miner extends Nimiq.Observable {
         allowedDevices = Array.isArray(allowedDevices) ? allowedDevices : [];
         memorySizes = Array.isArray(memorySizes) ? memorySizes : [];
         threads = Array.isArray(threads) ? threads : [];
+        cacheSizes = Array.isArray(cacheSizes) ? cacheSizes : [];
 
-        const miner = new NativeMiner.Miner(allowedDevices, memorySizes, threads);
+        const miner = new NativeMiner.Miner(allowedDevices, memorySizes, threads, cacheSizes);
         const workers = miner.getWorkers();
 
         this._hashes = [];

@@ -102,15 +102,24 @@ private:
     {
       threads[i] = Nan::To<uint32_t>(threadsArray->Get(i)).FromJust();
     }
+    // Local cache size for each GPU (number of blocks)
+    v8::Local<v8::Array> cacheSizesArray = v8::Local<v8::Array>::Cast(info[3]);
+    uint32_t *cacheSizes = new uint32_t[cacheSizesArray->Length()];
+    for (uint32_t i = 0; i < cacheSizesArray->Length(); i++)
+    {
+      cacheSizes[i] = Nan::To<uint32_t>(cacheSizesArray->Get(i)).FromJust();
+    }
 
     miner_t m;
     cl_int ret = initialize_miner(&m, enabledDevices, enabledDevicesArray->Length(),
                                   memorySizes, memorySizesArray->Length(),
-                                  threads, threadsArray->Length());
+                                  threads, threadsArray->Length(),
+                                  cacheSizes, cacheSizesArray->Length());
 
     delete[] enabledDevices;
     delete[] memorySizes;
     delete[] threads;
+    delete[] cacheSizes;
 
     if (ret != CL_SUCCESS)
     {

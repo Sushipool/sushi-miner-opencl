@@ -68,7 +68,7 @@ async function setupNanoPoolMiner(addr, config, deviceData) {
 
     const address = Nimiq.Address.fromUserFriendlyAddress(addr);
     $.miner = new NanoPoolMiner($.blockchain, $.network.time, address, deviceId, deviceData,
-        config.devices, config.memory, config.threads);
+        config.devices, config.memory, config.threads, config.cache);
 
     $.miner.on('share', (block, blockValid) => {
         Log.i(TAG, `Found share. Nonce: ${block.header.nonce}`);
@@ -103,7 +103,7 @@ async function setupNanoPoolMiner(addr, config, deviceData) {
 async function setupSushiPoolMiner(address, config, deviceData) {
     Log.i(TAG, `Setting up SushiPoolMiner`);
 
-    $.miner = new SushiPoolMiner(address, deviceData, config.devices, config.memory, config.threads);
+    $.miner = new SushiPoolMiner(address, deviceData, config.devices, config.memory, config.threads, config.cache);
     $.miner.on('share', nonce => {
         Log.i(TAG, `Found share. Nonce: ${nonce}`);
     });

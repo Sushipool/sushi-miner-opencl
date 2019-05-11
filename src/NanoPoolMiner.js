@@ -5,12 +5,12 @@ const SHARE_WATCHDOG_INTERVAL = 180; // seconds
 
 class NanoPoolMiner extends Nimiq.NanoPoolMiner {
 
-    constructor(blockchain, time, address, deviceId, deviceData, allowedDevices, memorySizes, threads) {
+    constructor(blockchain, time, address, deviceId, deviceData, allowedDevices, memorySizes, threads, cacheSizes) {
         super(blockchain, time, address, deviceId, deviceData);
 
         this._sharesFound = 0;
 
-        this._miner = new Miner(allowedDevices, memorySizes, threads);
+        this._miner = new Miner(allowedDevices, memorySizes, threads, cacheSizes);
         this._miner.on('share', nonce => {
             this._submitShare(nonce);
         });

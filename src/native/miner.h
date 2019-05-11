@@ -48,7 +48,8 @@ typedef struct
 cl_int initialize_miner(miner_t *miner,
                         uint32_t *enabled_devices, uint32_t enabled_devices_len,
                         uint32_t *memory_sizes, uint32_t memory_sizes_len,
-                        uint32_t *threads, uint32_t threads_len);
+                        uint32_t *threads, uint32_t threads_len,
+                        uint32_t *cache_sizes, uint32_t cache_sizes_len);
 cl_int release_miner(miner_t *miner);
 cl_int setup_worker(worker_t *worker, void *initial_seed);
 cl_int mine_nonces(worker_t *worker, cl_uint start_nonce, cl_uint share_compact, cl_uint *nonce);
