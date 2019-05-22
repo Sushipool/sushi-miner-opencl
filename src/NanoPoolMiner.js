@@ -48,8 +48,10 @@ class NanoPoolMiner extends Nimiq.NanoPoolMiner {
             mode: this.mode,
             address: this._ourAddress.toUserFriendlyAddress(),
             deviceId: this._deviceId,
+            startDifficulty: this._deviceData.startDifficulty,
             deviceName: this._deviceData.deviceName,
             deviceData: this._deviceData,
+            minerVersion: this._deviceData.minerVersion,
             genesisHash: Nimiq.BufferUtils.toBase64(Nimiq.GenesisConfig.GENESIS_HASH.serialize())
         });
     }

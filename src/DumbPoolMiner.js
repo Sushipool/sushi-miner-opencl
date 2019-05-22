@@ -7,7 +7,7 @@ const Utils = require('./Utils');
 
 const GENESIS_HASH_MAINNET = 'Jkqvik+YKKdsVQY12geOtGYwahifzANxC+6fZJyGnRI=';
 
-class SushiPoolMiner extends Nimiq.Observable {
+class DumbPoolMiner extends Nimiq.Observable {
 
     constructor(address, deviceData, allowedDevices, memorySizes, threads, cacheSizes) {
         super();
@@ -33,7 +33,7 @@ class SushiPoolMiner extends Nimiq.Observable {
     }
 
     connect(host, port) {
-        Nimiq.Log.i(SushiPoolMiner, `Connecting to ${host}:${port}`);
+        Nimiq.Log.i(DumbPoolMiner, `Connecting to ${host}:${port}`);
         this._host = host;
         this._closed = false;
         this._ws = new WebSocket(`wss://${host}:${port}`);
@@ -45,7 +45,7 @@ class SushiPoolMiner extends Nimiq.Observable {
         this._ws.on('close', (code, reason) => {
             let timeout = Math.floor(Math.random() * 25) + 5;
             this._host = Utils.getNewHost(this._host);
-            Nimiq.Log.w(SushiPoolMiner, `Connection lost. Reconnecting in ${timeout} seconds to ${this._host}`);
+            Nimiq.Log.w(DumbPoolMiner, `Connection lost. Reconnecting in ${timeout} seconds to ${this._host}`);
             this._stopMining();
             if (!this._closed) {
                 setTimeout(() => {
@@ -56,7 +56,7 @@ class SushiPoolMiner extends Nimiq.Observable {
 
         this._ws.on('message', (msg) => this._onMessage(JSON.parse(msg)));
 
-        this._ws.on('error', (e) => Nimiq.Log.e(SushiPoolMiner, `WS error - ${e.message}`, e));
+        this._ws.on('error', (e) => Nimiq.Log.e(DumbPoolMiner, `WS error - ${e.message}`, e));
     }
 
     disconnect() {
@@ -65,7 +65,7 @@ class SushiPoolMiner extends Nimiq.Observable {
     }
 
     _register() {
-        Nimiq.Log.i(SushiPoolMiner, `Registering to pool (${this._host}) using device id ${this._deviceId} (${this._deviceData.deviceName}) as a dumb client.`);
+        Nimiq.Log.i(DumbPoolMiner, `Registering to pool (${this._host}) using device id ${this._deviceId} (${this._deviceData.deviceName}) as a dumb client.`);
         this._send({
             message: 'register',
             mode: 'dumb',
@@ -83,7 +83,7 @@ class SushiPoolMiner extends Nimiq.Observable {
         if (!msg || !msg.message) return;
         switch (msg.message) {
             case 'registered':
-                Nimiq.Log.i(SushiPoolMiner, 'Connected to pool');
+                Nimiq.Log.i(DumbPoolMiner, 'Connected to pool');
                 break;
             case 'settings':
                 this._onNewPoolSettings(msg.address, Buffer.from(msg.extraData, 'base64'), msg.targetCompact, msg.nonce);
@@ -95,14 +95,14 @@ class SushiPoolMiner extends Nimiq.Observable {
                 this._onNewBlock(Buffer.from(msg.blockHeader, 'base64'));
                 break;
             case 'error':
-                Nimiq.Log.w(SushiPoolMiner, `Pool error: ${msg.reason}`);
+                Nimiq.Log.w(DumbPoolMiner, `Pool error: ${msg.reason}`);
                 break;
         }
     }
 
     _startMining() {
         const height = this._currentBlockHeader.readUInt32BE(134);
-        Nimiq.Log.i(SushiPoolMiner, `Starting work on block #${height}`);
+        Nimiq.Log.i(DumbPoolMiner, `Starting work on block #${height}`);
         this._miner.startMiningOnBlock(this._currentBlockHeader);
     }
 
@@ -113,18 +113,18 @@ class SushiPoolMiner extends Nimiq.Observable {
 
     _onNewPoolSettings(address, extraData, shareCompact, nonce) {
         const difficulty = Nimiq.BlockUtils.compactToDifficulty(shareCompact);
-        Nimiq.Log.i(SushiPoolMiner, `Set share difficulty: ${difficulty.toFixed(2)} (${shareCompact.toString(16)})`);
+        Nimiq.Log.i(DumbPoolMiner, `Set share difficulty: ${difficulty.toFixed(2)} (${shareCompact.toString(16)})`);
         this._miner.setShareCompact(shareCompact);
     }
 
     _onBalance(balance, confirmedBalance) {
-        Nimiq.Log.i(SushiPoolMiner, `Balance: ${Nimiq.Policy.lunasToCoins(balance)} NIM, confirmed balance: ${Nimiq.Policy.lunasToCoins(confirmedBalance)} NIM`);
+        Nimiq.Log.i(DumbPoolMiner, `Balance: ${Nimiq.Policy.lunasToCoins(balance)} NIM, confirmed balance: ${Nimiq.Policy.lunasToCoins(confirmedBalance)} NIM`);
     }
 
     _onNewBlock(blockHeader) {
         // Workaround duplicated blocks
         if (this._currentBlockHeader != undefined && this._currentBlockHeader.equals(blockHeader)) {
-            Nimiq.Log.w(SushiPoolMiner, 'The same block appears once again!');
+            Nimiq.Log.w(DumbPoolMiner, 'The same block appears once again!');
             return;
         }
 
@@ -145,7 +145,7 @@ class SushiPoolMiner extends Nimiq.Observable {
             this._ws.send(JSON.stringify(msg));
         } catch (e) {
             const readyState = this._ws.readyState;
-            Nimiq.Log.e(SushiPoolMiner, `WS error - ${e.message}`);
+            Nimiq.Log.e(DumbPoolMiner, `WS error - ${e.message}`);
             if (readyState === WebSocket.CLOSED) {
                 this._ws.close();
             }
@@ -153,4 +153,4 @@ class SushiPoolMiner extends Nimiq.Observable {
     }
 }
 
-module.exports = SushiPoolMiner;
+module.exports = DumbPoolMiner;

@@ -3,7 +3,7 @@ const pjson = require('./package.json');
 const Nimiq = require('@nimiq/core');
 const Utils = require('./src/Utils');
 const NanoPoolMiner = require('./src/NanoPoolMiner');
-const SushiPoolMiner = require('./src/SushiPoolMiner');
+const DumbPoolMiner = require('./src/DumbPoolMiner');
 const Log = Nimiq.Log;
 
 const TAG = 'SushiMiner';
@@ -22,27 +22,28 @@ if (!config) {
     const hashrate = (config.hashrate > 0) ? config.hashrate : 100; // 100 kH/s by default
     const desiredSps = 5;
     const startDifficulty = (1e3 * hashrate * desiredSps) / (1 << 16);
-    const minerVersion = 'OpenCL Miner ' + pjson.version;
+    const minerVersion = 'Sushi Miner ' + pjson.version + ' OpenCL';
     const deviceData = { deviceName, startDifficulty, minerVersion };
+
+    // if not specified in the config file, defaults to dumb to make LTD happy :)
+    const consensusType = config.consensus || (config.host.toLowerCase().includes('sushipool') ? 'dumb' : 'nano');
+
+    const setup = { // can add other miner types here
+        'dumb': setupDumbPoolMiner,
+        'nano': setupNanoPoolMiner
+    };
+    const createMiner = setup[consensusType];
+    if (!createMiner) {
+        throw new Error(`Wrong consensus type: ${consensusType}`);
+    }
 
     Log.i(TAG, `Nimiq ${minerVersion} starting`);
     Log.i(TAG, `- pool server      = ${config.host}:${config.port}`);
     Log.i(TAG, `- address          = ${address}`);
+    Log.i(TAG, `- consensus        = ${consensusType}`);
     Log.i(TAG, `- device name      = ${deviceName}`);
 
-    // if not specified in the config file, defaults to dumb to make LTD happy :)
-    let consensusType = config.consensus || 'dumb';
-    if (consensusType === 'dumb' && !config.host.toLowerCase().includes('sushipool')) {
-        Log.i(TAG, 'Dumb mode can only be used with SushiPool. Switching to nano.');
-        consensusType = 'nano';
-    }
-
-    const setup = { // can add other miner types here
-        'dumb': setupSushiPoolMiner,
-        'nano': setupNanoPoolMiner
-    }
-    const createMiner = setup[consensusType];
-    createMiner(address, config, deviceData);
+    await createMiner(address, config, deviceData);
 
 })().catch(e => {
     console.error(e);
@@ -100,10 +101,10 @@ async function setupNanoPoolMiner(addr, config, deviceData) {
     $.network.connect();
 }
 
-async function setupSushiPoolMiner(address, config, deviceData) {
-    Log.i(TAG, `Setting up SushiPoolMiner`);
+async function setupDumbPoolMiner(address, config, deviceData) {
+    Log.i(TAG, `Setting up DumbPoolMiner`);
 
-    $.miner = new SushiPoolMiner(address, deviceData, config.devices, config.memory, config.threads, config.cache);
+    $.miner = new DumbPoolMiner(address, deviceData, config.devices, config.memory, config.threads, config.cache);
     $.miner.on('share', nonce => {
         Log.i(TAG, `Found share. Nonce: ${nonce}`);
     });
