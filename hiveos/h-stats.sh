@@ -10,7 +10,7 @@ get_cards_hashes(){
         local offset=9
 
         for (( i=0; i < ${GPU_COUNT}; i++ )); do
-                local card_hash=`cat $LOG_NAME | grep "GPU" | tail -n 1 | awk -v offset="$offset" '{ printf $offset"\n" }'`
+                local card_hash=`cat $LOG_NAME | grep -a "GPU" | tail -n 1 | awk -v offset="$offset" '{ printf $offset"\n" }'`
                 hs[$i]=`echo $card_hash`
                 let offset+=4
         done
