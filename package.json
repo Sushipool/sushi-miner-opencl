@@ -13,7 +13,8 @@
   "gypfile": true,
   "scripts": {
     "build": "node-gyp build",
-    "rebuild": "node-gyp rebuild"
+    "rebuild": "node-gyp rebuild",
+    "configure": "node-gyp configure"
   },
   "dependencies": {
     "@nimiq/core": "^1.4.3",
