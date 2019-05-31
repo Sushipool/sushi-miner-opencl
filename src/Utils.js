@@ -46,8 +46,8 @@ exports.validateConfigFile = function(cfg) {
         throw new Error(`Could not validate host: '${cfg.host}'`);
     }
 
-    if (cfg.port !== '443') {
-        throw new Error(`Please use port '443' got '${cfg.port}'`);
+    if (parseInt(cfg.port).toString() !== cfg.port.toString()) {
+        throw new Error(`port could not be parsed as an integer, got '${cfg.port}'`);
     }
 
     if (cfg.name === '') {
@@ -59,8 +59,8 @@ exports.validateConfigFile = function(cfg) {
         throw new Error(`Please use one of '${consensuses.join(', ')}'; got ${cfg.consensus}`);
     }
 
-    if (parseFloat(cfg.hashrate).toString() === cfg.hashrate) {
-        throw new Error(`Could not parse hashrate of ${cfg.hashrate}`);
+    if (!cfg.hashrate || cfg.hashrate.toString().length === 0) {
+        throw new Error(`hashrate is empty; please provide one`);
     }
 
     const allTrue = (e) => e === true;
