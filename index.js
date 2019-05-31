@@ -12,6 +12,7 @@ const $ = {};
 Log.instance.level = 'info';
 
 const config = Utils.readConfigFile('./miner.conf');
+
 if (!config) {
     process.exit(1);
 }
