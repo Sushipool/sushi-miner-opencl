@@ -78,16 +78,31 @@ exports.validateConfigFile = function(cfg) {
         })
 }
 
-exports.readConfigFile = function(fileName) {
+exports.readConfigFile = function(fileName, watchCB) {
     try {
         const config = JSON5.parse(fs.readFileSync(fileName));
         exports.validateConfigFile(config);
+
+        if (typeof watchCB === 'function') {
+            exports.watchConfigFile.apply(this, [filename, watchCB]);
+        }
 
         return config;
     } catch (e) {
         Nimiq.Log.e(`Failed to read config file ${fileName}: ${e.message}`);
         return false;
     }
+}
+
+exports.watchConfigFile = function(fileName, cb) {
+    fs.watchFile(fileName, () => {
+        const cfg = readConfigFile(filename);
+        if (cfg === false) {
+            return;
+        }
+
+        cb(cfg);
+    });
 }
 
 exports.getNewHost = function(currentHost) {

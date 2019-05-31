@@ -11,7 +11,9 @@ const $ = {};
 
 Log.instance.level = 'info';
 
-const config = Utils.readConfigFile('./miner.conf');
+const config = Utils.readConfigFile('./miner.conf', (cfg) => {
+    console.log(cfg);
+});
 
 if (!config) {
     process.exit(1);
@@ -45,7 +47,6 @@ if (!config) {
     Log.i(TAG, `- device name      = ${deviceName}`);
 
     await createMiner(address, config, deviceData);
-
 })().catch(e => {
     console.error(e);
     process.exit(1);
