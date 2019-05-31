@@ -84,7 +84,7 @@ exports.readConfigFile = function(fileName, watchCB) {
         exports.validateConfigFile(config);
 
         if (typeof watchCB === 'function') {
-            exports.watchConfigFile.apply(this, [filename, watchCB]);
+            exports.watchConfigFile.apply(this, [fileName, watchCB]);
         }
 
         return config;
@@ -96,7 +96,7 @@ exports.readConfigFile = function(fileName, watchCB) {
 
 exports.watchConfigFile = function(fileName, cb) {
     fs.watchFile(fileName, () => {
-        const cfg = readConfigFile(filename);
+        const cfg = exports.readConfigFile(fileName);
         if (cfg === false) {
             return;
         }

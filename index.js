@@ -11,15 +11,17 @@ const $ = {};
 
 Log.instance.level = 'info';
 
-const config = Utils.readConfigFile('./miner.conf', (cfg) => {
-    console.log(cfg);
+const cfg = Utils.readConfigFile('./miner.conf', (cfg) => {
+    terminateMiner();
+    startMiner(cfg);
 });
 
-if (!config) {
+if (!cfg) {
     process.exit(1);
 }
+startMiner(cfg);
 
-(async () => {
+async function startMiner(config) {
     const address = config.address;
     const deviceName = config.name || os.hostname();
     const hashrate = (config.hashrate > 0) ? config.hashrate : 100; // 100 kH/s by default
@@ -46,11 +48,15 @@ if (!config) {
     Log.i(TAG, `- consensus        = ${consensusType}`);
     Log.i(TAG, `- device name      = ${deviceName}`);
 
-    await createMiner(address, config, deviceData);
-})().catch(e => {
-    console.error(e);
-    process.exit(1);
-});
+    await createMiner(address, config, deviceData).catch(e => {
+        console.error(e);
+        process.exit(1);
+    });
+}
+
+function terminateMiner() {
+    $.miner.disconnect();
+}
 
 function reportHashrates(hashrates) {
     const totalHashRate = hashrates.reduce((a, b) => a + b, 0);
