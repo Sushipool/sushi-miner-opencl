@@ -9,14 +9,14 @@ const GENESIS_HASH_MAINNET = 'Jkqvik+YKKdsVQY12geOtGYwahifzANxC+6fZJyGnRI=';
 
 class DumbPoolMiner extends Nimiq.Observable {
 
-    constructor(address, deviceData, allowedDevices, memorySizes, threads, cacheSizes) {
+    constructor(address, deviceData, deviceOptions) {
         super();
 
         this._address = address;
         this._deviceId = this._getDeviceId();
         this._deviceData = deviceData;
 
-        this._miner = new Miner(allowedDevices, memorySizes, threads, cacheSizes);
+        this._miner = new Miner(deviceOptions);
         this._miner.on('share', nonce => {
             this._submitShare(nonce);
         });
@@ -44,7 +44,7 @@ class DumbPoolMiner extends Nimiq.Observable {
 
         this._ws.on('close', (code, reason) => {
             let timeout = Math.floor(Math.random() * 25) + 5;
-            this._host = Utils.getNewHost(this._host);
+            //this._host = Utils.getNewHost(this._host);
             Nimiq.Log.w(DumbPoolMiner, `Connection lost. Reconnecting in ${timeout} seconds to ${this._host}`);
             this._stopMining();
             if (!this._closed) {
@@ -92,7 +92,7 @@ class DumbPoolMiner extends Nimiq.Observable {
                 this._onBalance(msg.balance, msg.confirmedBalance);
                 break;
             case 'new-block':
-                this._onNewBlock(Buffer.from(msg.blockHeader, 'base64'));
+                this._onNewBlock(Nimiq.BlockHeader.unserialize(Nimiq.BufferUtils.fromBase64(msg.blockHeader)));
                 break;
             case 'error':
                 Nimiq.Log.w(DumbPoolMiner, `Pool error: ${msg.reason}`);
@@ -101,9 +101,8 @@ class DumbPoolMiner extends Nimiq.Observable {
     }
 
     _startMining() {
-        const height = this._currentBlockHeader.readUInt32BE(134);
-        Nimiq.Log.i(DumbPoolMiner, `Starting work on block #${height}`);
-        this._miner.startMiningOnBlock(this._currentBlockHeader);
+        Nimiq.Log.i(DumbPoolMiner, `Starting work on block #${this._currentBlockHeader.height}`);
+        this._miner.startMiningOnBlock(this._currentBlockHeader.serialize());
     }
 
     _stopMining() {

@@ -24,6 +24,7 @@ if (!config) {
     const startDifficulty = (1e3 * hashrate * desiredSps) / (1 << 16);
     const minerVersion = 'Sushi Miner ' + pjson.version + ' OpenCL';
     const deviceData = { deviceName, startDifficulty, minerVersion };
+    const deviceOptions = Utils.getDeviceOptions(config);
 
     // if not specified in the config file, defaults to dumb to make LTD happy :)
     const consensusType = config.consensus || (config.host.toLowerCase().includes('sushipool') ? 'dumb' : 'nano');
@@ -43,7 +44,7 @@ if (!config) {
     Log.i(TAG, `- consensus        = ${consensusType}`);
     Log.i(TAG, `- device name      = ${deviceName}`);
 
-    await createMiner(address, config, deviceData);
+    await createMiner(address, config, deviceData, deviceOptions);
 
 })().catch(e => {
     console.error(e);
@@ -55,7 +56,7 @@ function reportHashrates(hashrates) {
     Log.i(TAG, `Hashrate: ${Utils.humanHashrate(totalHashRate)} | ${hashrates.map((hr, idx) => `GPU${idx}: ${Utils.humanHashrate(hr)}`).filter(hr => hr).join(' | ')}`);
 }
 
-async function setupNanoPoolMiner(addr, config, deviceData) {
+async function setupNanoPoolMiner(addr, config, deviceData, deviceOptions) {
     Log.i(TAG, `Setting up NanoPoolMiner`);
 
     Nimiq.GenesisConfig.main();
@@ -68,9 +69,7 @@ async function setupNanoPoolMiner(addr, config, deviceData) {
     Log.i(TAG, `- device id        = ${deviceId}`);
 
     const address = Nimiq.Address.fromUserFriendlyAddress(addr);
-    $.miner = new NanoPoolMiner($.blockchain, $.network.time, address, deviceId, deviceData,
-        config.devices, config.memory, config.threads, config.cache);
-
+    $.miner = new NanoPoolMiner($.blockchain, $.network.time, address, deviceId, deviceData, deviceOptions);
     $.miner.on('share', (block, blockValid) => {
         Log.i(TAG, `Found share. Nonce: ${block.header.nonce}`);
     });
@@ -101,10 +100,10 @@ async function setupNanoPoolMiner(addr, config, deviceData) {
     $.network.connect();
 }
 
-async function setupDumbPoolMiner(address, config, deviceData) {
+async function setupDumbPoolMiner(address, config, deviceData, deviceOptions) {
     Log.i(TAG, `Setting up DumbPoolMiner`);
 
-    $.miner = new DumbPoolMiner(address, deviceData, config.devices, config.memory, config.threads, config.cache);
+    $.miner = new DumbPoolMiner(address, deviceData, deviceOptions);
     $.miner.on('share', nonce => {
         Log.i(TAG, `Found share. Nonce: ${nonce}`);
     });

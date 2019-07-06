@@ -2,15 +2,17 @@ const Nimiq = require('@nimiq/core');
 const Miner = require('./Miner');
 
 const SHARE_WATCHDOG_INTERVAL = 180; // seconds
+const SHARE_WATCHDOG_MAX_REJECTS = 10;
 
 class NanoPoolMiner extends Nimiq.NanoPoolMiner {
 
-    constructor(blockchain, time, address, deviceId, deviceData, allowedDevices, memorySizes, threads, cacheSizes) {
+    constructor(blockchain, time, address, deviceId, deviceData, deviceOptions) {
         super(blockchain, time, address, deviceId, deviceData);
 
         this._sharesFound = 0;
+        this._rejectedShares = 0;
 
-        this._miner = new Miner(allowedDevices, memorySizes, threads, cacheSizes);
+        this._miner = new Miner(deviceOptions);
         this._miner.on('share', nonce => {
             this._submitShare(nonce);
         });
@@ -27,10 +29,10 @@ class NanoPoolMiner extends Nimiq.NanoPoolMiner {
         this._block = block;
 
         Nimiq.Log.i(NanoPoolMiner, `Starting work on block #${block.height}`);
-        this._miner.startMiningOnBlock(Buffer.from(block.header.serialize()));
+        this._miner.startMiningOnBlock(block.header.serialize());
 
         if (!this._shareWatchDog) {
-            this._shareWatchDog = setInterval(() => this._checkIfSharesFound(), 1000 * SHARE_WATCHDOG_INTERVAL);
+            this._shareWatchDog = setInterval(() => this._checkShares(), 1000 * SHARE_WATCHDOG_INTERVAL);
         }
     }
 
@@ -84,19 +86,38 @@ class NanoPoolMiner extends Nimiq.NanoPoolMiner {
         });
     }
 
+    _onMessage(ws, msgJson) {
+        super._onMessage(ws, msgJson);
+        try {
+            const msg = JSON.parse(msgJson);
+            if (msg && msg.message === 'error') {
+                this._rejectedShares++;
+            }
+        } catch (e) {
+        }
+    }
+
     _onBlockMined(block) {
         super._onBlockMined(block);
         this._sharesFound++;
     }
 
-    _checkIfSharesFound() {
-        Nimiq.Log.d(NanoPoolMiner, `Shares found since the last check: ${this._sharesFound}`);
-        if (this._sharesFound > 0) {
-            this._sharesFound = 0;
+    _checkShares() {
+        const sharesFound = this._sharesFound;
+        const rejectedShares = this._rejectedShares;
+        this._sharesFound = 0;
+        this._rejectedShares = 0;
+        Nimiq.Log.d(NanoPoolMiner, `Shares found since the last check: ${sharesFound}`);
+        if (sharesFound === 0) {
+            Nimiq.Log.w(NanoPoolMiner, `No shares have been found for the last ${SHARE_WATCHDOG_INTERVAL} seconds. Reconnecting.`);
+            this._timeoutReconnect();
             return;
         }
-        Nimiq.Log.w(NanoPoolMiner, `No shares have been found for the last ${SHARE_WATCHDOG_INTERVAL} seconds. Reconnecting.`);
-        this._timeoutReconnect();
+        if (rejectedShares >= SHARE_WATCHDOG_MAX_REJECTS) {
+            Nimiq.Log.w(NanoPoolMiner, `Too many errors for the last ${SHARE_WATCHDOG_INTERVAL} seconds. Reconnecting.`);
+            this._timeoutReconnect();
+            return;
+        }
     }
 
     _turnPoolOff() {

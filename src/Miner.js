@@ -5,8 +5,8 @@ const INITIAL_SEED_SIZE = 256;
 const MAX_NONCE = 2 ** 32;
 
 // TODO: configurable interval
-const HASHRATE_MOVING_AVERAGE = 5; // seconds
-const HASHRATE_REPORT_INTERVAL = 5; // seconds
+const HASHRATE_MOVING_AVERAGE = 6; // measurements
+const HASHRATE_REPORT_INTERVAL = 10; // seconds
 
 const ARGON2_ITERATIONS = 1;
 const ARGON2_LANES = 1;
@@ -18,19 +18,14 @@ const ARGON2_HASH_LENGTH = 32;
 
 class Miner extends Nimiq.Observable {
 
-    constructor(allowedDevices, memorySizes, threads, cacheSizes) {
+    constructor(deviceOptions) {
         super();
 
         this._miningEnabled = false;
         this._nonce = 0;
         this._workId = 0;
 
-        allowedDevices = Array.isArray(allowedDevices) ? allowedDevices : [];
-        memorySizes = Array.isArray(memorySizes) ? memorySizes : [];
-        threads = Array.isArray(threads) ? threads : [];
-        cacheSizes = Array.isArray(cacheSizes) ? cacheSizes : [];
-
-        const miner = new NativeMiner.Miner(allowedDevices, memorySizes, threads, cacheSizes);
+        const miner = new NativeMiner.Miner(deviceOptions.devices, deviceOptions.memory, deviceOptions.threads, deviceOptions.cache);
         const workers = miner.getWorkers();
 
         this._hashes = [];
@@ -79,7 +74,7 @@ class Miner extends Nimiq.Observable {
         seed.writeUInt32LE(ARGON2_VERSION, 16);
         seed.writeUInt32LE(ARGON2_TYPE, 20);
         seed.writeUInt32LE(blockHeader.length, 24);
-        blockHeader.copy(seed, 28);
+        Buffer.from(blockHeader).copy(seed, 28);
         seed.writeUInt32LE(ARGON2_SALT.length, 174);
         seed.write(ARGON2_SALT, 178, 'ascii');
         return seed;
@@ -93,11 +88,15 @@ class Miner extends Nimiq.Observable {
             this._lastHashRates[idx].push(hashRate);
             if (this._lastHashRates[idx].length > HASHRATE_MOVING_AVERAGE) {
                 this._lastHashRates[idx].shift();
+                averageHashRates[idx] = this._lastHashRates[idx].reduce((sum, val) => sum + val, 0) / this._lastHashRates[idx].length;
+            } else if (this._lastHashRates[idx].length > 1) {
+                averageHashRates[idx] = this._lastHashRates[idx].slice(1).reduce((sum, val) => sum + val, 0) / (this._lastHashRates[idx].length - 1);
             }
-            averageHashRates[idx] = this._lastHashRates[idx].reduce((sum, val) => sum + val, 0) / this._lastHashRates[idx].length;
         });
         this._hashes = [];
-        this.fire('hashrate-changed', averageHashRates);
+        if (averageHashRates.length > 0) {
+            this.fire('hashrate-changed', averageHashRates);
+        }
     }
 
     setShareCompact(shareCompact) {
@@ -119,7 +118,7 @@ class Miner extends Nimiq.Observable {
 
     stop() {
         this._miningEnabled = false;
-        this._miner.close();        
+        //this._miner.close();
         if (this._hashRateTimer) {
             this._hashes = [];
             this._lastHashRates = [];
