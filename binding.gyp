@@ -2,8 +2,7 @@
   'targets': [{
     'target_name': 'nimiq_miner_opencl',
     'sources': [
-      'src/native/miner.c',
-      'src/native/nimiq_miner.cc'
+      'src/native/opencl/miner.cc'
     ],
     'include_dirs': [
       '<!(node -e "require(\'nan\')")',

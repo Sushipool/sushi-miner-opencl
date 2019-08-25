@@ -47,5 +47,30 @@ exports.getDeviceOptions = function (config) {
     const threads = Array.isArray(config.threads) ? config.threads : [];
     const cache = Array.isArray(config.cache) ? config.cache : [];
 
-    return { devices, memory, threads, cache };
+    const getOption = (values, deviceIndex) => {
+        if (values.length > 0) {
+            const value = (values.length === 1) ? values[0] : values[(devices.length === 0) ? deviceIndex : devices.indexOf(deviceIndex)];
+            if (Number.isInteger(value)) {
+                return value;
+            }
+        }
+        return undefined;
+    };
+
+    return {
+        forDevice: (deviceIndex) => {
+            const enabled = (devices.length === 0) || devices.includes(deviceIndex);
+            if (!enabled) {
+                return {
+                    enabled: false
+                };
+            }
+            return {
+                enabled: true,
+                memory: getOption(memory, deviceIndex),
+                threads: getOption(threads, deviceIndex),
+                cache: getOption(cache, deviceIndex)
+            };
+        }
+    }
 }

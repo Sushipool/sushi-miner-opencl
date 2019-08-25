@@ -1,6 +1,6 @@
 {
   "name": "sushi-miner-opencl",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "main": "index.js",
   "homepage": "https://sushipool.com/",
   "description": "",
@@ -18,7 +18,7 @@
   "dependencies": {
     "@nimiq/core": "^1.4.3",
     "bindings": "^1.4.0",
-    "nan": "^2.12.1"
+    "nan": "^2.14.0"
   },
   "devDependencies": {
     "node-gyp": "^3.8.0"

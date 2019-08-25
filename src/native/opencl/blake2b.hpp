@@ -3,6 +3,9 @@
 * based on reference implementation https://github.com/BLAKE2/BLAKE2
 */
 
+#include <string>
+
+std::string srcBlake2b{R"====(
 #define ARGON2_HASH_LENGTH 32
 
 #define BLAKE2B_HASH_LENGTH 64
@@ -295,3 +298,4 @@ void get_nonce(global struct block_g *memory, uint start_nonce, uint share_compa
     atomic_cmpxchg(nonce_found, 0, nonce);
   }
 }
+)===="};

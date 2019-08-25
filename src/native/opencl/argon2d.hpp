@@ -26,6 +26,9 @@ SOFTWARE.
 * Argon2d
 * refined version of https://gitlab.com/omos/argon2-gpu
 */
+#include <string>
+
+std::string srcArgon2d{R"====(
 #define ARGON2_BLOCK_SIZE 1024
 #define ARGON2_QWORDS_IN_BLOCK (ARGON2_BLOCK_SIZE / 8)
 #define MEMORY_COST 512
@@ -314,3 +317,4 @@ void argon2(__local struct block_g *shmem, __global struct block_g *memory)
                     thread);
     }
 }
+)===="};

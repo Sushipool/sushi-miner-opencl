@@ -1,83 +1,39 @@
 const Nimiq = require('@nimiq/core');
 const NativeMiner = require('bindings')('nimiq_miner_opencl.node');
 
-const INITIAL_SEED_SIZE = 256;
-const MAX_NONCE = 2 ** 32;
-
 // TODO: configurable interval
 const HASHRATE_MOVING_AVERAGE = 6; // measurements
 const HASHRATE_REPORT_INTERVAL = 10; // seconds
-
-const ARGON2_ITERATIONS = 1;
-const ARGON2_LANES = 1;
-const ARGON2_MEMORY_COST = 512;
-const ARGON2_VERSION = 0x13;
-const ARGON2_TYPE = 0; // Argon2D
-const ARGON2_SALT = 'nimiqrocks!';
-const ARGON2_HASH_LENGTH = 32;
 
 class Miner extends Nimiq.Observable {
 
     constructor(deviceOptions) {
         super();
 
-        this._miningEnabled = false;
-        this._nonce = 0;
-        this._workId = 0;
-
-        const miner = new NativeMiner.Miner(deviceOptions.devices, deviceOptions.memory, deviceOptions.threads, deviceOptions.cache);
-        const workers = miner.getWorkers();
+        this._miner = new NativeMiner.Miner();
+        this._devices = this._miner.getDevices();
+        this._devices.forEach((device, idx) => {
+            const options = deviceOptions.forDevice(idx);
+            if (!options.enabled) {
+                device.enabled = false;
+                Nimiq.Log.i(`GPU #${idx}: ${device.name}. Disabled by user.`);
+                return;
+            }
+            if (options.memory !== undefined) {
+                device.memory = options.memory;
+            }
+            if (options.threads !== undefined) {
+                device.threads = options.threads;
+            }
+            if (options.cache !== undefined) {
+                device.cache = options.cache;
+            }
+            Nimiq.Log.i(`GPU #${idx}: ${device.name}, ${device.maxComputeUnits} CU @ ${device.maxClockFrequency} MHz. (memory: ${device.memory == 0 ? 'auto' : device.memory}, threads: ${device.threads}, cache: ${device.cache})`);
+        });
+        this._miner.initializeDevices();
 
         this._hashes = [];
         this._lastHashRates = [];
-
-        this._miner = miner; // Keep GC away
-        this._workers = workers.map(w => {
-            const noncesPerRun = w.noncesPerRun;
-            const idx = w.deviceIndex;
-
-            return (blockHeader) => {
-                const workId = this._workId;
-                const next = () => {
-                    const startNonce = this._nonce;
-                    this._nonce += noncesPerRun;
-                    w.mineNonces((error, nonce) => {
-                        if (error) {
-                            throw error;
-                        }
-                        this._hashes[idx] = (this._hashes[idx] || 0) + noncesPerRun;
-                        // Another block arrived
-                        if (workId !== this._workId) {
-                            return;
-                        }
-                        if (nonce > 0) {
-                            this.fire('share', nonce);
-                        }
-                        if (this._miningEnabled && this._nonce < MAX_NONCE) {
-                            next();
-                        }
-                    }, startNonce, this._shareCompact);
-                }
-
-                w.setup(this._getInitialSeed(blockHeader));
-                next();
-            };
-        });
-    }
-
-    _getInitialSeed(blockHeader) {
-        const seed = Buffer.alloc(INITIAL_SEED_SIZE);
-        seed.writeUInt32LE(ARGON2_LANES, 0);
-        seed.writeUInt32LE(ARGON2_HASH_LENGTH, 4);
-        seed.writeUInt32LE(ARGON2_MEMORY_COST, 8);
-        seed.writeUInt32LE(ARGON2_ITERATIONS, 12);
-        seed.writeUInt32LE(ARGON2_VERSION, 16);
-        seed.writeUInt32LE(ARGON2_TYPE, 20);
-        seed.writeUInt32LE(blockHeader.length, 24);
-        Buffer.from(blockHeader).copy(seed, 28);
-        seed.writeUInt32LE(ARGON2_SALT.length, 174);
-        seed.write(ARGON2_SALT, 178, 'ascii');
-        return seed;
     }
 
     _reportHashRate() {
@@ -100,25 +56,29 @@ class Miner extends Nimiq.Observable {
     }
 
     setShareCompact(shareCompact) {
-        this._shareCompact = shareCompact;
+        this._miner.setShareCompact(shareCompact);
     }
 
     startMiningOnBlock(blockHeader) {
-        if (!this._shareCompact) {
-            throw 'Share compact is not set';
-        }
-        this._workId++;
-        this._nonce = 0;
-        this._miningEnabled = true;
         if (!this._hashRateTimer) {
             this._hashRateTimer = setInterval(() => this._reportHashRate(), 1000 * HASHRATE_REPORT_INTERVAL);
         }
-        this._workers.forEach(worker => worker(blockHeader));
+        this._miner.startMiningOnBlock(blockHeader, (error, obj) => {
+            if (error) {
+                throw error;
+            }
+            if (obj.done === true) {
+                return;
+            }
+            if (obj.nonce > 0) {
+                this.fire('share', obj.nonce);
+            }
+            this._hashes[obj.device] = (this._hashes[obj.device] || 0) + obj.noncesPerRun;
+        });
     }
 
     stop() {
-        this._miningEnabled = false;
-        //this._miner.close();
+        this._miner.stop();
         if (this._hashRateTimer) {
             this._hashes = [];
             this._lastHashRates = [];
