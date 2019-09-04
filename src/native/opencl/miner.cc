@@ -82,7 +82,8 @@ private:
   bool enabled = true;
   uint32_t memory = 0; // auto
   uint32_t threads = 2;
-  uint32_t cache = 0; // auto
+  uint32_t cache = 2;
+  uint32_t jobs = 2;
 
   std::vector<MinerThread *> minerThreads;
 
@@ -290,6 +291,7 @@ NAN_METHOD(Miner::GetDevices)
     Nan::SetAccessor(device, Nan::New("memory").ToLocalChecked(), Device::HandleGetters, Device::HandleSetters);
     Nan::SetAccessor(device, Nan::New("threads").ToLocalChecked(), Device::HandleGetters, Device::HandleSetters);
     Nan::SetAccessor(device, Nan::New("cache").ToLocalChecked(), Device::HandleGetters, Device::HandleSetters);
+    Nan::SetAccessor(device, Nan::New("jobs").ToLocalChecked(), Device::HandleGetters, Device::HandleSetters);
     devices->Set(deviceIndex, device);
   }
   info.GetReturnValue().Set(devices);
@@ -462,6 +464,10 @@ NAN_GETTER(Device::HandleGetters)
   {
     info.GetReturnValue().Set(device->cache);
   }
+  else if (propertyName == "jobs")
+  {
+    info.GetReturnValue().Set(device->jobs);
+  }
 }
 
 NAN_SETTER(Device::HandleSetters)
@@ -512,6 +518,19 @@ NAN_SETTER(Device::HandleSetters)
     }
     device->cache = cache;
   }
+  else if (propertyName == "jobs")
+  {
+    if (!value->IsUint32())
+    {
+      return Nan::ThrowError(Nan::New("Jobs must be >= 1.").ToLocalChecked());
+    }
+    uint32_t jobs = Nan::To<uint32_t>(value).FromJust();
+    if (jobs < 1)
+    {
+      return Nan::ThrowError(Nan::New("Jobs must be >= 1.").ToLocalChecked());
+    }
+    device->jobs = jobs;
+  }
 }
 
 bool Device::IsEnabled()
@@ -545,11 +564,10 @@ void Device::Initialize()
 
   uint32_t noncesPerRun = memSize / (ARGON2_BLOCK_SIZE * NIMIQ_ARGON2_COST);
 
-  cl_uint jobsPerBlock = (isAMD ? 2 : 1);
-  cl_uint cacheSize = (cache > 0 ? cache : (isAMD ? 3 : 2));
-  size_t shmemSize = (1 + cacheSize) * jobsPerBlock * ARGON2_BLOCK_SIZE;
+  cl_uint jobsPerBlock = (isAMD ? jobs : 1);
+  size_t shmemSize = cache * jobsPerBlock * ARGON2_BLOCK_SIZE;
 
-  // printf("Mem size: %lu, nonces per run: %u, shared mem size: %lu\n", memSize, noncesPerRun, shmemSize);
+  // printf("Mem size: %lu, nonces per run: %u, jobs: %u, cache: %u, shared mem size: %lu\n", memSize, noncesPerRun, jobsPerBlock, cache, shmemSize);
 
   context = cl::Context(device);
 
@@ -561,11 +579,8 @@ void Device::Initialize()
   try
   {
     std::string buildOptions = "-Werror";
-    if (isAMD)
-    {
-      buildOptions += " -DAMD";
-    }
-    buildOptions += " -DCACHE_SIZE=" + std::to_string(cacheSize);
+    buildOptions += " -DCACHE_SIZE=" + std::to_string(cache);
+    buildOptions += " -DJOBS_PER_BLOCK=" + std::to_string(jobsPerBlock);
 
     // printf("Build options: `%s`\n", buildOptions.c_str());
     program.build(buildOptions.c_str());

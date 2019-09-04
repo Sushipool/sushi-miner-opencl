@@ -28,7 +28,10 @@ class Miner extends Nimiq.Observable {
             if (options.cache !== undefined) {
                 device.cache = options.cache;
             }
-            Nimiq.Log.i(`GPU #${idx}: ${device.name}, ${device.maxComputeUnits} CU @ ${device.maxClockFrequency} MHz. (memory: ${device.memory == 0 ? 'auto' : device.memory}, threads: ${device.threads}, cache: ${device.cache})`);
+            if (options.jobs !== undefined) {
+                device.jobs = options.jobs;
+            }
+            Nimiq.Log.i(`GPU #${idx}: ${device.name}, ${device.maxComputeUnits} CU @ ${device.maxClockFrequency} MHz. (memory: ${device.memory == 0 ? 'auto' : device.memory}, threads: ${device.threads}, cache: ${device.cache}, jobs: ${device.jobs})`);
         });
         this._miner.initializeDevices();
 

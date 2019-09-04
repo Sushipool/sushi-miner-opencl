@@ -46,6 +46,7 @@ exports.getDeviceOptions = function (config) {
     const memory = Array.isArray(config.memory) ? config.memory : [];
     const threads = Array.isArray(config.threads) ? config.threads : [];
     const cache = Array.isArray(config.cache) ? config.cache : [];
+    const jobs = Array.isArray(config.jobs) ? config.jobs : [];
 
     const getOption = (values, deviceIndex) => {
         if (values.length > 0) {
@@ -69,7 +70,8 @@ exports.getDeviceOptions = function (config) {
                 enabled: true,
                 memory: getOption(memory, deviceIndex),
                 threads: getOption(threads, deviceIndex),
-                cache: getOption(cache, deviceIndex)
+                cache: getOption(cache, deviceIndex),
+                jobs: getOption(jobs, deviceIndex)
             };
         }
     }

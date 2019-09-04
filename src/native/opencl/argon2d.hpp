@@ -81,6 +81,14 @@ void load_block_global(struct block_th *dst, __global const struct block_g *src,
     dst->d = src->data[3 * THREADS_PER_LANE + thread];
 }
 
+void load_block_local(struct block_th *dst, __local const struct block_g *src, uint thread)
+{
+    dst->a = src->data[0 * THREADS_PER_LANE + thread];
+    dst->b = src->data[1 * THREADS_PER_LANE + thread];
+    dst->c = src->data[2 * THREADS_PER_LANE + thread];
+    dst->d = src->data[3 * THREADS_PER_LANE + thread];
+}
+
 void load_block_xor_global(struct block_th *dst, __global const struct block_g *src, uint thread)
 {
     dst->a ^= src->data[0 * THREADS_PER_LANE + thread];
@@ -166,155 +174,126 @@ void g(struct block_th *block)
     block->d = d;
 }
 
-uint get_ref_pos(struct block_th *prev, __local struct block_g *buf, uint curr_index, uint thread)
+void shuffle_block(struct block_th *block, __local struct block_g *buf, uint thread)
 {
-    if (thread == 0)
-    {
-        buf->data[thread] = prev->a;
-    }
+    // Transpose 1
+    store_block_local(buf, block, thread);
     barrier(CLK_LOCAL_MEM_FENCE);
+    block->a = buf->data[IDX_A(1)];
+    block->b = buf->data[IDX_B(1)];
+    block->c = buf->data[IDX_C(1)];
+    block->d = buf->data[IDX_D(1)];
 
-    ulong v = buf->data[0];
+    g(block);
+
+    // Shuffle 1, index of A doesn't change
+    buf->data[IDX_B(1)] = block->b;
+    buf->data[IDX_C(1)] = block->c;
+    buf->data[IDX_D(1)] = block->d;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    block->b = buf->data[IDX_B(2)];
+    block->c = buf->data[IDX_C(2)];
+    block->d = buf->data[IDX_D(2)];
+
+    g(block);
+
+    // Shuffle 2
+    buf->data[IDX_A(2)] = block->a;
+    buf->data[IDX_B(2)] = block->b;
+    buf->data[IDX_C(2)] = block->c;
+    buf->data[IDX_D(2)] = block->d;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    block->a = buf->data[IDX_A(3)];
+    block->b = buf->data[IDX_B(3)];
+    block->c = buf->data[IDX_C(3)];
+    block->d = buf->data[IDX_D(3)];
+
+    g(block);
+
+    // Shuffle 3, index of A doesn't change
+    buf->data[IDX_B(3)] = block->b;
+    buf->data[IDX_C(3)] = block->c;
+    buf->data[IDX_D(3)] = block->d;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    block->b = buf->data[IDX_B(4)];
+    block->c = buf->data[IDX_C(4)];
+    block->d = buf->data[IDX_D(4)];
+
+    g(block);
+
+    // Transpose 2 + XOR
+    buf->data[IDX_A(4)] = block->a;
+    buf->data[IDX_B(4)] = block->b;
+    buf->data[IDX_C(4)] = block->c;
+    buf->data[IDX_D(4)] = block->d;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    load_block_local(block, buf, thread);
+}
+
+uint compute_ref_index(__local struct block_g *block, uint curr_index)
+{
+    ulong v = block->data[0];
     uint ref_index = u64_lo(v);
-    uint ref_area_size = curr_index - 1;
+    uint ref_area_size = curr_index; // -1
     ref_index = mul_hi(ref_index, ref_index);
     return ref_area_size - 1 - mul_hi(ref_area_size, ref_index);
 }
 
-void argon2_core(__global struct block_g *memory,
-                 uint curr_index, uint nonces_per_run, struct block_th *prev,
-                 __local struct block_g *buf,
-#ifdef CACHE_SIZE
-                 __local struct block_g *cache,
-#endif
-                 uint thread)
-{
-    struct block_th block;
-
-    uint ref_index = get_ref_pos(prev, buf, curr_index, thread);
-
-    // Load from memory + XOR
-#ifdef CACHE_SIZE
-    bool cached = (ref_index + CACHE_SIZE + 1 >= curr_index);
-    if (cached)
-    {
-        load_block_xor_local(prev, cache + ref_index % CACHE_SIZE, thread);
-    }
-    else
-    {
-#endif
-        load_block_xor_global(prev, memory + ref_index * nonces_per_run, thread);
-#ifdef CACHE_SIZE
-    }
-#endif
-
-    // Transpose 1
-    store_block_local(buf, prev, thread);
-    barrier(CLK_LOCAL_MEM_FENCE);
-    block.a = buf->data[IDX_A(1)];
-    block.b = buf->data[IDX_B(1)];
-    block.c = buf->data[IDX_C(1)];
-    block.d = buf->data[IDX_D(1)];
-
-    g(&block);
-
-    // Shuffle 1, index of A doesn't change
-    buf->data[IDX_B(1)] = block.b;
-    buf->data[IDX_C(1)] = block.c;
-    buf->data[IDX_D(1)] = block.d;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    block.b = buf->data[IDX_B(2)];
-    block.c = buf->data[IDX_C(2)];
-    block.d = buf->data[IDX_D(2)];
-
-    g(&block);
-
-    // Shuffle 2
-    buf->data[IDX_A(2)] = block.a;
-    buf->data[IDX_B(2)] = block.b;
-    buf->data[IDX_C(2)] = block.c;
-    buf->data[IDX_D(2)] = block.d;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    block.a = buf->data[IDX_A(3)];
-    block.b = buf->data[IDX_B(3)];
-    block.c = buf->data[IDX_C(3)];
-    block.d = buf->data[IDX_D(3)];
-
-    g(&block);
-
-    // Shuffle 3, index of A doesn't change
-    buf->data[IDX_B(3)] = block.b;
-    buf->data[IDX_C(3)] = block.c;
-    buf->data[IDX_D(3)] = block.d;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    block.b = buf->data[IDX_B(4)];
-    block.c = buf->data[IDX_C(4)];
-    block.d = buf->data[IDX_D(4)];
-
-    g(&block);
-
-    // Transpose 2 + XOR
-    buf->data[IDX_A(4)] = block.a;
-    buf->data[IDX_B(4)] = block.b;
-    buf->data[IDX_C(4)] = block.c;
-    buf->data[IDX_D(4)] = block.d;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    load_block_xor_local(prev, buf, thread);
-
-    // Store to memory (don't store last cached blocks)
-#ifdef CACHE_SIZE
-    bool stored = (curr_index < MEMORY_COST - CACHE_SIZE - 2) || (curr_index == MEMORY_COST - 1);
-    if (stored)
-    {
-#endif
-        store_block_global(memory + curr_index * nonces_per_run, prev, thread);
-#ifdef CACHE_SIZE
-    }
-#endif
-}
-
 __kernel
-#ifdef AMD
-__attribute__((reqd_work_group_size(32, 2, 1)))
-#else
-__attribute__((reqd_work_group_size(32, 1, 1)))
-#endif
+__attribute__((reqd_work_group_size(32, JOBS_PER_BLOCK, 1)))
 void argon2(__local struct block_g *shmem, __global struct block_g *memory)
 {
     uint job_id = get_global_id(1);
     uint warp   = get_local_id(1);
-    uint jobs_per_block  = get_local_size(1);
     uint thread = get_local_id(0);
     uint nonces_per_run = get_global_size(1);
 
-    __local struct block_g *buf = &shmem[warp];
-#ifdef CACHE_SIZE
-    __local struct block_g *cache = &shmem[jobs_per_block + warp * CACHE_SIZE];
-#endif
+    __local struct block_g *cache = &shmem[warp * CACHE_SIZE];
 
-    /* select job's memory region: */
     memory += job_id;
 
-#ifdef CACHE_SIZE
-    struct block_th tmp;
-    load_block_global(&tmp, memory, thread);
-#endif
+    struct block_th tmp, prev, evicted;
 
-    struct block_th prev;
+    load_block_global(&tmp, memory, thread);
     load_block_global(&prev, memory + nonces_per_run, thread);
+
+    // cache first blocks
+    store_block_local(cache, &tmp, thread);
+    store_block_local(cache + 1, &prev, thread);
+
+    uint ref_index = 0;
 
     for (uint curr_index = 2; curr_index < MEMORY_COST; curr_index++)
     {
-#ifdef CACHE_SIZE
-        store_block_local(cache + (curr_index - 2) % CACHE_SIZE, &tmp, thread);
-        move_block(&tmp, &prev);
-#endif
+        uint ref_offset = curr_index - ref_index;
+        if (ref_offset <= CACHE_SIZE)
+        {
+            load_block_xor_local(&prev, cache + ref_index % CACHE_SIZE, thread);
+        }
+        else
+        {
+            load_block_xor_global(&prev, memory + ref_index * nonces_per_run, thread);
+        }
 
-        argon2_core(memory, curr_index, nonces_per_run, &prev, buf,
-#ifdef CACHE_SIZE
-                    cache,
-#endif
-                    thread);
+        __local struct block_g *curr_cache = cache + (curr_index % CACHE_SIZE);
+
+        load_block_local(&evicted, curr_cache, thread);
+
+        move_block(&tmp, &prev);
+        shuffle_block(&prev, curr_cache, thread);
+        xor_block(&prev, &tmp);
+
+        store_block_local(curr_cache, &prev, thread);
+        barrier(CLK_LOCAL_MEM_FENCE);
+
+        ref_index = compute_ref_index(curr_cache, curr_index); // next block ref_index
+
+        if (curr_index > CACHE_SIZE + 1)
+        {
+            store_block_global(memory + (curr_index - CACHE_SIZE) * nonces_per_run, &evicted, thread);
+        }
     }
+
+    store_block_global(memory + (MEMORY_COST - 1) * nonces_per_run, &prev, thread);
 }
 )===="};
