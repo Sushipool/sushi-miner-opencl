@@ -56,13 +56,13 @@ void blake2b_init(ulong *h, uint hashlen)
 #define G(i, a, b, c, d)                \
   do {                                  \
     a = a + b + m[sigma[r][2 * i]];     \
-    d = rotr64(d ^ a, 32);              \
+    d = rotr_32(d ^ a);                 \
     c = c + d;                          \
-    b = rotr64(b ^ c, 24);              \
+    b = rotr_24(b ^ c);                 \
     a = a + b + m[sigma[r][2 * i + 1]]; \
-    d = rotr64(d ^ a, 16);              \
+    d = rotr_16(d ^ a);                 \
     c = c + d;                          \
-    b = rotr64(b ^ c, 63);              \
+    b = rotr_63(b ^ c);                 \
   } while(0)
 
 #define ROUND()                      \

@@ -35,10 +35,6 @@ std::string srcArgon2d{R"====(
 
 #define THREADS_PER_LANE 32
 
-#define u64_build(hi, lo)   (as_ulong((uint2)((lo), (hi))))
-#define u64_lo(x)   (as_uint2(x).s0)
-#define u64_hi(x)   (as_uint2(x).s1)
-
 struct block_g
 {
     ulong data[ARGON2_QWORDS_IN_BLOCK];
@@ -123,32 +119,64 @@ void store_block_local(__local struct block_g *dst, const struct block_th *src, 
 
 #ifdef cl_amd_media_ops
 #pragma OPENCL EXTENSION cl_amd_media_ops : enable
-ulong rotr64(ulong x, ulong n)
+inline ulong rotr_32(ulong v)
 {
-    uint lo = u64_lo(x);
-    uint hi = u64_hi(x);
-    uint r_lo, r_hi;
-    if (n < 32) {
-        r_lo = amd_bitalign(hi, lo, (uint)n);
-        r_hi = amd_bitalign(lo, hi, (uint)n);
-    } else {
-        r_lo = amd_bitalign(lo, hi, (uint)n - 32);
-        r_hi = amd_bitalign(hi, lo, (uint)n - 32);
-    }
-    return u64_build(r_hi, r_lo);
+  return as_ulong(as_uint2(v).s10);
+}
+
+inline ulong rotr_24(ulong x)
+{
+    uint2 v, r;
+    v = as_uint2(x);
+    r.x = amd_bytealign(v.y, v.x, 3);
+    r.y = amd_bytealign(v.x, v.y, 3);
+    return as_ulong(r);
+}
+
+inline ulong rotr_16(ulong x)
+{
+    uint2 v, r;
+    v = as_uint2(x);
+    r.x = amd_bytealign(v.y, v.x, 2);
+    r.y = amd_bytealign(v.x, v.y, 2);
+    return as_ulong(r);
+}
+
+inline ulong rotr_63(ulong x)
+{
+    uint2 v, r;
+    v = as_uint2(x);
+    r.x = amd_bitalign(v.x, v.y, 31);
+    r.y = amd_bitalign(v.y, v.x, 31);
+    return as_ulong(r);
 }
 #else
-ulong rotr64(ulong x, ulong n)
+inline ulong rotr_32(ulong x)
 {
-    return rotate(x, 64 - n);
+    return rotate(x, (ulong) 32);
+}
+
+inline ulong rotr_24(ulong x)
+{
+    return rotate(x, (ulong) 40);
+}
+
+inline ulong rotr_16(ulong x)
+{
+    return rotate(x, (ulong) 48);
+}
+
+inline ulong rotr_63(ulong x)
+{
+    return rotate(x, (ulong) 1);
 }
 #endif
 
-ulong f(ulong x, ulong y)
+inline ulong f(ulong x, ulong y)
 {
-    uint xlo = u64_lo(x);
-    uint ylo = u64_lo(y);
-    return x + y + 2 * u64_build(mul_hi(xlo, ylo), xlo * ylo);
+    uint xlo = (uint) x;
+    uint ylo = (uint) y;
+    return x + y + 2 * upsample(mul_hi(xlo, ylo), xlo * ylo);
 }
 
 void g(struct block_th *block)
@@ -160,13 +188,13 @@ void g(struct block_th *block)
     d = block->d;
 
     a = f(a, b);
-    d = rotr64(d ^ a, 32);
+    d = rotr_32(d ^ a);
     c = f(c, d);
-    b = rotr64(b ^ c, 24);
+    b = rotr_24(b ^ c);
     a = f(a, b);
-    d = rotr64(d ^ a, 16);
+    d = rotr_16(d ^ a);
     c = f(c, d);
-    b = rotr64(b ^ c, 63);
+    b = rotr_63(b ^ c);
 
     block->a = a;
     block->b = b;
@@ -233,7 +261,7 @@ void shuffle_block(struct block_th *block, __local struct block_g *buf, uint thr
 uint compute_ref_index(__local struct block_g *block, uint curr_index)
 {
     ulong v = block->data[0];
-    uint ref_index = u64_lo(v);
+    uint ref_index = (uint) v;
     uint ref_area_size = curr_index; // -1
     ref_index = mul_hi(ref_index, ref_index);
     return ref_area_size - 1 - mul_hi(ref_area_size, ref_index);
