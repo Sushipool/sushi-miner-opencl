@@ -57,11 +57,19 @@ devices         GPU devices to use
                 Default: All available GPUs                              [array]
                 
 memory          Allocated memory in Mb for each device
-                Example: "memory": [3072,3840,3840,3840]                 [array]
+                Example: "memory": [4032,4032,1984]                      [array]
                 
 threads         Number of threads per GPU
-                Example: "threads": [1,1,2,2]
-                Default: 1                                               [array]
+                Example: "threads": [2]
+                Default: 2                                               [array]
+
+cache           Number of Argon2 blocks to cache
+                Example: "cache": [4]
+                Default: 2                                               [array]
+
+jobs            Number of simultaneous jobs to run on a single compute unit
+                Example: "jobs": [8]
+                Default: 2                                               [array]
 ```
 
 ### Links
