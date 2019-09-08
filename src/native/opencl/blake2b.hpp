@@ -152,19 +152,18 @@ void fill_first_block(global struct block_g *memory, global ulong *inseed, uint 
   prehash_seed[17] = block;
 
   ulong buffer[BLAKE2B_QWORDS_IN_BLOCK] = {0};
-  global ulong *dst = memory->data;
 
   // V1
   blake2b_init(hash, BLAKE2B_HASH_LENGTH);
   blake2b_compress(hash, (ulong*) &prehash_seed, ARGON2_PREHASH_SEED_SIZE, true);
 
-  *(dst++) = hash[0];
-  *(dst++) = hash[1];
-  *(dst++) = hash[2];
-  *(dst++) = hash[3];
+  memory->data[0] = hash[0];
+  memory->data[1] = hash[1];
+  memory->data[2] = hash[2];
+  memory->data[3] = hash[3];
 
   // V2-Vr
-  for (uint r = 2; r < 2 * ARGON2_BLOCK_SIZE / BLAKE2B_HASH_LENGTH; r++)
+  for (uint r = 1; r < 2 * ARGON2_BLOCK_SIZE / BLAKE2B_HASH_LENGTH - 1; r++)
   {
     buffer[0] = hash[0];
     buffer[1] = hash[1];
@@ -178,16 +177,17 @@ void fill_first_block(global struct block_g *memory, global ulong *inseed, uint 
     blake2b_init(hash, BLAKE2B_HASH_LENGTH);
     blake2b_compress(hash, buffer, BLAKE2B_HASH_LENGTH, true);
 
-    *(dst++) = hash[0];
-    *(dst++) = hash[1];
-    *(dst++) = hash[2];
-    *(dst++) = hash[3];
+    uint idx = ((r & 0x3) << 5) | (r & 0x1c);
+    memory->data[0 + idx] = hash[0];
+    memory->data[1 + idx] = hash[1];
+    memory->data[2 + idx] = hash[2];
+    memory->data[3 + idx] = hash[3];
   }
 
-  *(dst++) = hash[4];
-  *(dst++) = hash[5];
-  *(dst++) = hash[6];
-  *(dst++) = hash[7];
+  memory->data[124] = hash[4];
+  memory->data[125] = hash[5];
+  memory->data[126] = hash[6];
+  memory->data[127] = hash[7];
 }
 
 void compact_to_target(uint share_compact, ulong *target)
