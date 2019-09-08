@@ -2,10 +2,10 @@
 # yarn lockfile v1
 
 
-"@nimiq/core@^1.4.3":
-  version "1.4.3"
-  resolved "https://registry.yarnpkg.com/@nimiq/core/-/core-1.4.3.tgz#aac9256fddcac5fe7fd622ec871d2982602ce946"
-  integrity sha512-Pn9zCgGKpeON6HoM8QA3ngo5FSqVhFhDOiuTFPFWTU99NvVO+CWX5VNj3dTUirUgNsjbzuS3+W35c48BZoBwfw==
+"@nimiq/core@^1.5.0":
+  version "1.5.0"
+  resolved "https://registry.yarnpkg.com/@nimiq/core/-/core-1.5.0.tgz#5a5bd0c788a9f9484466dafa884cfc3676340c8e"
+  integrity sha512-1ZE/k1gyj2p2mXe1q3r46i6akCkjOPKxFbzgt3AiYVs12Uzu+iwMMzDJN9iF5K8jZhKJU/028rkY7VS4z1eSFg==
   dependencies:
     "@nimiq/jungle-db" "^0.9.17"
     atob "^2.0.3"
@@ -14,7 +14,7 @@
     chalk "^2.3.2"
     cpuid-git "^0.3.0"
     json5 "^1.0.1"
-    lodash.merge "^4.6.1"
+    lodash.merge "^4.6.2"
     minimist "^1.2.0"
     nan "^2.10.0"
     ws "^5.2.0"
@@ -698,10 +698,10 @@ levelup@~0.19.0:
     semver "~5.1.0"
     xtend "~3.0.0"
 
-lodash.merge@^4.6.1:
-  version "4.6.1"
-  resolved "https://registry.yarnpkg.com/lodash.merge/-/lodash.merge-4.6.1.tgz#adc25d9cb99b9391c59624f379fbba60d7111d54"
-  integrity sha512-AOYza4+Hf5z1/0Hztxpm2/xiPZgi/cjMqdnKTUWTBSKchJlxXXuUSxCCl8rJlf4g6yww/j6mA8nC8Hw/EZWxKQ==
+lodash.merge@^4.6.2:
+  version "4.6.2"
+  resolved "https://registry.yarnpkg.com/lodash.merge/-/lodash.merge-4.6.2.tgz#558aa53b43b661e1925a0afdfa36a9a1085fe57a"
+  integrity sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ==
 
 looper@^2.0.0:
   version "2.0.0"
@@ -764,10 +764,15 @@ minimist@^1.2.0:
   dependencies:
     minimist "0.0.8"
 
-nan@^2.10.0, nan@^2.12.1:
+nan@^2.10.0:
   version "2.12.1"
   resolved "https://registry.yarnpkg.com/nan/-/nan-2.12.1.tgz#7b1aa193e9aa86057e3c7bbd0ac448e770925552"
   integrity sha512-JY7V6lRkStKcKTvHO5NVSQRv+RV+FIL5pvDoLiAtSL9pKlC5x9PKQcZDsq7m4FO4d57mkhC6Z+QhAh3Jdk5JFw==
+
+nan@^2.14.0:
+  version "2.14.0"
+  resolved "https://registry.yarnpkg.com/nan/-/nan-2.14.0.tgz#7818f722027b2459a86f0295d434d1fc2336c52c"
+  integrity sha512-INOFj37C7k3AfaNTtX8RhsTw7qRy7eLET14cROi9+5HAVbbHuIWUHEauBv5qT4Av2tWasiTY1Jw6puUNqRJXQg==
 
 nan@~2.10.0:
   version "2.10.0"

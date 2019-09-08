@@ -16,7 +16,7 @@
     "rebuild": "node-gyp rebuild"
   },
   "dependencies": {
-    "@nimiq/core": "^1.4.3",
+    "@nimiq/core": "^1.5.0",
     "bindings": "^1.4.0",
     "nan": "^2.14.0"
   },
