@@ -219,7 +219,7 @@ void shuffle_block(struct block_th *block, __local struct block_g *buf, uint thr
     buf->data[IDX_B(1)] = block->b;
     buf->data[IDX_C(1)] = block->c;
     buf->data[IDX_D(1)] = block->d;
-    barrier(CLK_LOCAL_MEM_FENCE);
+    //barrier(CLK_LOCAL_MEM_FENCE);
     block->b = buf->data[IDX_B(2)];
     block->c = buf->data[IDX_C(2)];
     block->d = buf->data[IDX_D(2)];
@@ -231,7 +231,7 @@ void shuffle_block(struct block_th *block, __local struct block_g *buf, uint thr
     buf->data[IDX_B(2)] = block->b;
     buf->data[IDX_C(2)] = block->c;
     buf->data[IDX_D(2)] = block->d;
-    barrier(CLK_LOCAL_MEM_FENCE);
+    //barrier(CLK_LOCAL_MEM_FENCE);
     block->a = buf->data[IDX_A(3)];
     block->b = buf->data[IDX_B(3)];
     block->c = buf->data[IDX_C(3)];
@@ -243,7 +243,7 @@ void shuffle_block(struct block_th *block, __local struct block_g *buf, uint thr
     buf->data[IDX_B(3)] = block->b;
     buf->data[IDX_C(3)] = block->c;
     buf->data[IDX_D(3)] = block->d;
-    barrier(CLK_LOCAL_MEM_FENCE);
+    //barrier(CLK_LOCAL_MEM_FENCE);
     block->b = buf->data[IDX_B(4)];
     block->c = buf->data[IDX_C(4)];
     block->d = buf->data[IDX_D(4)];
@@ -255,7 +255,7 @@ void shuffle_block(struct block_th *block, __local struct block_g *buf, uint thr
     buf->data[IDX_B(4)] = block->b;
     buf->data[IDX_C(4)] = block->c;
     buf->data[IDX_D(4)] = block->d;
-    barrier(CLK_LOCAL_MEM_FENCE);
+    //barrier(CLK_LOCAL_MEM_FENCE);
     block->a = buf->data[IDX_A(1)];
     block->b = buf->data[IDX_B(1)];
     block->c = buf->data[IDX_C(1)];
@@ -316,7 +316,7 @@ void argon2(__local struct block_g *shmem, __global struct block_g *memory)
         xor_block(&prev, &tmp);
 
         store_block_local(curr_cache, &prev, thread);
-        barrier(CLK_LOCAL_MEM_FENCE);
+        //barrier(CLK_LOCAL_MEM_FENCE);
 
         ref_index = compute_ref_index(curr_cache, curr_index); // next block ref_index
 
